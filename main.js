@@ -45,6 +45,18 @@ document.addEventListener('click', (ev) => {
       setMe(a.player);
       break;
     }
+    case 'edit-hcp': openHcp(a.player); break;
+    case 'close-hcp': closeHcp(); break;
+    case 'save-hcp': {
+      const raw = document.getElementById('hcp-input').value.trim();
+      const value = Number(raw);
+      if (raw === '' || !Number.isInteger(value) || value < -10 || value > 54) {
+        alert('Enter a whole number between -10 and 54.');
+        break;
+      }
+      setHandicap(a.player, value);
+      break;
+    }
     case 'forget-me': forgetMe(); break;
     case 'share-invite': {
       const link = inviteLink();

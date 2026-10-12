@@ -267,6 +267,34 @@ function chargeFine(playerId, fineType, amount) {
   });
 }
 
+// ---- handicaps ---------------------------------------------------------------
+
+function anyScoresEntered(state) {
+  return state.sessions.some((s) => s.matches.some((m) =>
+    Object.keys(m.grossScores).some((id) => Object.keys(m.grossScores[id]).length > 0)));
+}
+
+function openHcp(playerId) {
+  update((state) => { state.ui.hcpEditPlayer = playerId; });
+}
+
+function closeHcp() {
+  update((state) => { state.ui.hcpEditPlayer = null; });
+}
+
+function setHandicap(playerId, value) {
+  update((state) => {
+    state.ui.hcpEditPlayer = null;
+    const old = PLAYERS_BY_ID[playerId].hcp;
+    if (value === old) return;
+    state.handicaps = Object.assign({}, state.handicaps, { [playerId]: value });
+    state.feed.unshift({
+      id: uid('fd'), author: 'Hawks Cup', isSystem: true, ts: Date.now(),
+      text: `${PLAYERS_BY_ID[playerId].name}'s handicap changed from ${old} to ${value} (by ${myName(state)}).`,
+    });
+  });
+}
+
 // ---- who am I / which trip -------------------------------------------------
 
 function setMe(playerId) {

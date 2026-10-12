@@ -12,8 +12,17 @@ function uid(prefix) { return prefix + '_' + Math.random().toString(36).slice(2,
 function defaultUi() {
   return {
     screen: 'cup', moneyTab: 'games', setupSessionId: 's3', cardMatchId: null,
-    finesOpen: false, drafts: {}, me: null, tripCode: null,
+    finesOpen: false, drafts: {}, me: null, tripCode: null, hcpEditPlayer: null,
   };
+}
+
+// Overlays the trip's edited handicaps onto the player list. Called on every
+// state change, so engine code can keep reading PLAYERS_BY_ID[id].hcp.
+function applyHandicaps(state) {
+  PLAYERS.forEach((p) => {
+    const v = state.handicaps && state.handicaps[p.id];
+    p.hcp = typeof v === 'number' ? v : BASE_HCP[p.id];
+  });
 }
 
 function makeMatch(sideA, sideB, id) {
@@ -42,12 +51,14 @@ function seedResultsIntoMatch(match, course, results) {
 function buildSessions() {
   const teamL = PLAYERS.filter((p) => p.team === 'L').map((p) => p.id);
   const teamT = PLAYERS.filter((p) => p.team === 'T').map((p) => p.id);
+  // The 2026 trip, in playing order: the Matchbox warm-up (no cup points) on
+  // Thursday, then four sessions worth 12 points (2 + 2 + 4 + 4).
   const cfg = [
-    { id: 's1', n: 1, day: 'Thu', courseId: 'mid-pines', format: 'fourball', shape: 'team', points: 2, tee: '08:10 off the 1st' },
-    { id: 's2', n: 2, day: 'Fri', courseId: 'pine-needles', format: 'fourball', shape: 'team', points: 2, tee: '07:50 off the 1st' },
-    { id: 's3', n: 3, day: 'Sat', courseId: 'southern-pines', format: 'netsingles', shape: 'singles', points: 4, tee: '09:20 shotgun' },
-    { id: 's4', n: 4, day: 'Sun', courseId: 'tobacco-road', format: 'singles', shape: 'singles', points: 4, tee: '08:00 off the 1st' },
-    { id: 'sx', n: '+', day: 'Extra', courseId: 'the-matchbox', format: 'scramble', shape: 'team', points: 0, tee: 'TBD' },
+    { id: 'sx', n: '+', day: 'Thu 11/5', courseId: 'the-matchbox', format: 'scramble', shape: 'team', points: 0, tee: 'Tee time TBD' },
+    { id: 's1', n: 1, day: 'Fri 11/6 AM', courseId: 'southern-pines', format: 'fourball', shape: 'team', points: 2, tee: 'Tee time TBD' },
+    { id: 's2', n: 2, day: 'Fri 11/6 PM', courseId: 'mid-pines', format: 'fourball', shape: 'team', points: 2, tee: 'Tee time TBD' },
+    { id: 's3', n: 3, day: 'Sat 11/7', courseId: 'pine-needles', format: 'netsingles', shape: 'singles', points: 4, tee: 'Tee time TBD' },
+    { id: 's4', n: 4, day: 'Sun 11/8', courseId: 'tobacco-road', format: 'singles', shape: 'singles', points: 4, tee: 'Tee time TBD' },
   ];
   return cfg.map((c) => Object.assign({}, c, {
     locked: false, matches: [], teamLOrder: teamL.slice(), teamTOrder: teamT.slice(),
@@ -58,7 +69,7 @@ function buildSessions() {
 function freshState(ui) {
   return {
     teamOneName: TEAM_ONE_NAME, teamTwoName: TEAM_TWO_NAME,
-    sessions: buildSessions(), ledger: [], sideGameEvents: [], feed: [],
+    sessions: buildSessions(), ledger: [], sideGameEvents: [], feed: [], handicaps: {},
     ui: ui || defaultUi(),
   };
 }
@@ -67,16 +78,17 @@ function freshState(ui) {
 // matches, a populated ledger and feed.
 function seedState(ui) {
   const state = freshState(ui);
-  const [s1, s2] = state.sessions;
+  const s1 = state.sessions.find((s) => s.id === 's1');
+  const s2 = state.sessions.find((s) => s.id === 's2');
 
   s1.locked = true;
   s1.matches = [
     makeMatch(['david', 'lenny'], ['tom', 'ben'], 'm1a'),
     makeMatch(['alex', 'dan'], ['ryan', 'jamey'], 'm1b'),
   ];
-  seedResultsIntoMatch(s1.matches[0], COURSES_BY_ID['mid-pines'],
+  seedResultsIntoMatch(s1.matches[0], COURSES_BY_ID[s1.courseId],
     [1, 0, 1, 0, 1, 0, -1, 0, 1, 0, 0, -1, 0, 1, 0, 0]); // decided 3&2
-  seedResultsIntoMatch(s1.matches[1], COURSES_BY_ID['mid-pines'],
+  seedResultsIntoMatch(s1.matches[1], COURSES_BY_ID[s1.courseId],
     [1, -1, 0, 1, -1, 0, 0, 1, -1, 0, 0, 1, -1, 0, 0, 1, -1, 0]); // halved thru 18
 
   s2.locked = true;
@@ -84,9 +96,9 @@ function seedState(ui) {
     makeMatch(['david', 'dan'], ['tom', 'jamey'], 'm2a'),
     makeMatch(['lenny', 'alex'], ['ben', 'ryan'], 'm2b'),
   ];
-  seedResultsIntoMatch(s2.matches[0], COURSES_BY_ID['pine-needles'],
+  seedResultsIntoMatch(s2.matches[0], COURSES_BY_ID[s2.courseId],
     [0, 1, 0, -1, 1, 0, 0, 1, 0, 0, 0, 0]); // thru 12, 2 up
-  seedResultsIntoMatch(s2.matches[1], COURSES_BY_ID['pine-needles'],
+  seedResultsIntoMatch(s2.matches[1], COURSES_BY_ID[s2.courseId],
     [-1, 0, 0, 1, 0, 0, -1, 0, 0, -1, 1, 0]); // thru 12, 1 down
 
   const now = Date.now();
@@ -140,6 +152,7 @@ function flattenState(state) {
   state.ledger.forEach((e) => { out['ledger_' + e.id] = e; });
   state.feed.forEach((e) => { out['feed_' + e.id] = e; });
   state.sideGameEvents.forEach((e) => { out['sge_' + e.id] = e; });
+  Object.keys(state.handicaps || {}).forEach((id) => { out['hcp_' + id] = { id, hcp: state.handicaps[id] }; });
   return JSON.parse(JSON.stringify(out));
 }
 
@@ -147,10 +160,11 @@ function assembleState(docs, ui) {
   const meta = docs.meta || {};
   const sessions = [];
   const matchesBySession = {};
-  const ledger = [], feed = [], sideGameEvents = [];
+  const ledger = [], feed = [], sideGameEvents = [], handicaps = {};
   Object.keys(docs).forEach((key) => {
     const d = docs[key];
-    if (key.indexOf('session_') === 0) sessions.push(d);
+    if (key.indexOf('hcp_') === 0) handicaps[d.id] = d.hcp;
+    else if (key.indexOf('session_') === 0) sessions.push(d);
     else if (key.indexOf('match_') === 0) (matchesBySession[d.sessionId] = matchesBySession[d.sessionId] || []).push(d);
     else if (key.indexOf('ledger_') === 0) ledger.push(d);
     else if (key.indexOf('feed_') === 0) feed.push(d);
@@ -169,7 +183,7 @@ function assembleState(docs, ui) {
   return {
     teamOneName: meta.teamOneName || TEAM_ONE_NAME,
     teamTwoName: meta.teamTwoName || TEAM_TWO_NAME,
-    sessions, ledger, sideGameEvents, feed, ui,
+    sessions, ledger, sideGameEvents, feed, handicaps, ui,
   };
 }
 
@@ -184,6 +198,7 @@ function loadState() {
     const parsed = JSON.parse(raw);
     if (!parsed || !Array.isArray(parsed.sessions)) return null;
     parsed.ui = Object.assign(defaultUi(), parsed.ui);
+    parsed.handicaps = parsed.handicaps || {};
     return parsed;
   } catch (e) {
     console.warn('Could not read saved state, starting fresh.', e);
@@ -203,12 +218,14 @@ function getState() { return STATE; }
 
 function initStore() {
   STATE = loadState() || seedState();
+  applyHandicaps(STATE);
 }
 
 // Mutates STATE via `fn`, saves locally, pushes the diff to the shared trip,
 // then re-renders. Every write to the app goes through here.
 function update(fn) {
   fn(STATE);
+  applyHandicaps(STATE);
   persist();
   if (typeof syncPush === 'function') syncPush();
   render();

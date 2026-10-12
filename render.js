@@ -25,7 +25,7 @@ function headerInfo(state) {
   }
   const map = {
     cup: { kicker: 'Standings', title: 'The Hawks Cup', right: new Date().toLocaleDateString('en-US', { weekday: 'short' }) },
-    rounds: { kicker: 'Schedule', title: 'Sessions', right: '4 courses' },
+    rounds: { kicker: 'Schedule', title: 'Sessions', right: '5 rounds' },
     money: { kicker: 'Games & money', title: 'The pot', right: moneyMovedLabel(state) },
     feed: { kicker: 'The group', title: 'Chatter', right: '8 golfers' },
     team: { kicker: 'Rosters', title: 'Teams & courses', right: '8 golfers' },
@@ -512,16 +512,16 @@ function renderTeams(state) {
     const players = PLAYERS.filter((p) => p.team === t.team).map((p) => {
       const rec = playerRecord(state, p.id);
       return `
-      <div style="display:flex;align-items:center;gap:12px;padding:10px 18px;border-top:1px solid var(--rule)">
+      <button data-action="edit-hcp" data-player="${p.id}" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:0;border-top:1px solid var(--rule);background:transparent;padding:10px 18px;min-height:52px">
         <div style="flex:1;min-width:0">
           <div style="font-size:15px;font-weight:800;letter-spacing:-.01em">${p.name}${p.captain ? ' (C)' : ''}</div>
           <div style="font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)">${rec.text} · ${fmtMoney(totals[p.id])}</div>
         </div>
         <div style="text-align:right">
           <div style="font-size:17px;font-weight:800">${p.hcp}</div>
-          <div style="font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:rgba(32,30,29,.45)">hcp</div>
+          <div style="font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)">hcp · edit</div>
         </div>
-      </div>`;
+      </button>`;
     }).join('');
     return `
     <div style="border-bottom:2px solid var(--rule)">
@@ -601,6 +601,29 @@ const SCREEN_RENDERERS = {
   money: renderMoney, feed: renderFeed, team: renderTeams, trophy: renderTrophy,
 };
 
+function renderHcpModal(state) {
+  const id = state.ui.hcpEditPlayer;
+  if (!id) return '';
+  const p = PLAYERS_BY_ID[id];
+  const warn = anyScoresEntered(state)
+    ? `<div style="border:1px solid var(--accent);padding:10px;font-size:12px;line-height:1.45"><strong style="color:var(--accent)">Scores already entered.</strong> Changing a handicap recalculates net scores and match results for every hole already played, for everyone.</div>`
+    : '';
+  return `
+  <div class="modal-backdrop" data-action="close-hcp">
+    <div class="modal-sheet" data-action="noop">
+      <div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Handicap · ${esc(p.name)}</div>
+      <label style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">Whole number (use a minus for plus-handicaps)
+        <input id="hcp-input" class="field-input" type="number" inputmode="numeric" step="1" min="-10" max="54" value="${p.hcp}" style="margin-top:4px">
+      </label>
+      ${warn}
+      <div style="display:flex;gap:10px;margin-top:6px">
+        <button data-action="close-hcp" class="btn btn-secondary" style="flex:1">Cancel</button>
+        <button data-action="save-hcp" data-player="${id}" class="btn btn-primary" style="flex:1">Save</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 // First launch on a phone: join the trip (code) and say who you are.
 function renderWelcome(state) {
   const needCode = syncAvailable() && !state.ui.tripCode;
@@ -623,11 +646,12 @@ let lastRenderedScreen = null;
 let scrollTopRequested = false;
 function requestScrollTop() { scrollTopRequested = true; }
 
-const PRESERVED_FIELDS = ['feed-input', 'trip-code-input', 'fine-player', 'fine-type', 'fine-amount'];
+const PRESERVED_FIELDS = ['feed-input', 'trip-code-input', 'fine-player', 'fine-type', 'fine-amount', 'hcp-input'];
 
 function render() {
   const state = getState();
   const ui = state.ui;
+  applyHandicaps(state);
 
   // Remote changes can delete what this phone is looking at.
   if (ui.screen === 'card' && !(ui.cardMatchId && matchById(ui.cardMatchId))) ui.screen = 'rounds';
@@ -653,6 +677,7 @@ function render() {
       ${renderTabBar(state)}
     </div>
     ${renderFinesModal(state)}
+    ${renderHcpModal(state)}
     ${needsWelcome ? renderWelcome(state) : ''}
   `;
 

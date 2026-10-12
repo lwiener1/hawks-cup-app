@@ -18,6 +18,12 @@ const PLAYERS = [
 const PLAYERS_BY_ID = {};
 PLAYERS.forEach((p) => { PLAYERS_BY_ID[p.id] = p; });
 
+// The numbers above are only the starting handicaps. Edits made in the app
+// (Teams > tap a player) live in the shared trip as state.handicaps and are
+// applied over these by applyHandicaps().
+const BASE_HCP = {};
+PLAYERS.forEach((p) => { BASE_HCP[p.id] = p.hcp; });
+
 function playerNames(ids) {
   return ids.map((id) => PLAYERS_BY_ID[id].name).join(' & ');
 }
