@@ -80,7 +80,7 @@ function buildSessions() {
     { id: 's1', n: 1, day: 'Fri 11/6 AM', courseId: 'southern-pines', format: 'fourball', shape: 'team', counts: true, tee: 'Tee time TBD' },
     { id: 's2', n: 2, day: 'Fri 11/6 PM', courseId: 'mid-pines', format: 'lowhigh', shape: 'team', counts: true, tee: 'Tee time TBD' },
     { id: 's3', n: 3, day: 'Sat 11/7', courseId: 'pine-needles', format: 'singles', shape: 'singles', counts: true, tee: 'Tee time TBD' },
-    { id: 's4', n: 4, day: 'Sun 11/8', courseId: 'tobacco-road', format: 'singles', shape: 'singles', counts: false, tee: 'Tee time TBD' },
+    { id: 's4', n: 4, day: 'Sun 11/8', courseId: 'tobacco-road', format: 'fourball', shape: 'team', counts: false, tee: 'Tee time TBD' },
   ];
   return cfg.map((c) => Object.assign({}, c, {
     teeId: COURSES_BY_ID[c.courseId].defaultTee,
