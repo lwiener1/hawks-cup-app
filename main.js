@@ -55,11 +55,11 @@ document.addEventListener('click', (ev) => {
     case 'save-hcp': {
       const raw = document.getElementById('hcp-input').value.trim();
       const value = Number(raw);
-      if (raw === '' || !Number.isInteger(value) || value < -10 || value > 54) {
-        alert('Enter a whole number between -10 and 54.');
+      if (raw === '' || !Number.isFinite(value) || value < -10 || value > 54) {
+        alert('Enter a handicap index between -10 and 54 (one decimal is fine, e.g. 11.4).');
         break;
       }
-      setHandicap(a.player, value);
+      setHandicap(a.player, Math.round(value * 10) / 10);
       break;
     }
     case 'forget-me': forgetMe(); break;
@@ -86,6 +86,7 @@ document.addEventListener('change', (ev) => {
   const el = ev.target.closest('select[data-action]');
   if (!el) return;
   if (el.dataset.action === 'set-slot') setSlot(el.dataset.session, el.dataset.team, Number(el.dataset.slot), el.value);
+  if (el.dataset.action === 'set-tee') pickTee(el.dataset.session, el.value);
 });
 
 initStore();

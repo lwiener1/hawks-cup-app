@@ -27,9 +27,9 @@ function pairingsFromOrders(shape, teamLOrder, teamTOrder) {
 
 // Who gets how many strokes in a pairing, under the match's handicap rule
 // (singles: full difference; 2v2: 90% of each, strokes off the low player).
-function pairingStrokesNote(sideA, sideB) {
+function pairingStrokesNote(sideA, sideB, session) {
   const ids = sideA.concat(sideB);
-  const strokes = handicapAllocation(ids);
+  const strokes = handicapAllocation(ids, session);
   const receivers = ids.filter((id) => strokes[id] > 0);
   if (!receivers.length) return 'Off scratch';
   if (sideA.length === 1) return `${PLAYERS_BY_ID[receivers[0]].name} gets ${strokes[receivers[0]]}`;
@@ -60,6 +60,14 @@ function pickCourse(sessionId, courseId) {
   update((state) => {
     const session = findSession(sessionId);
     session.courseId = courseId;
+    session.teeId = COURSES_BY_ID[courseId].defaultTee;
+  });
+}
+
+function pickTee(sessionId, teeId) {
+  update((state) => {
+    const session = findSession(sessionId);
+    if (COURSES_BY_ID[session.courseId].tees.some((t) => t.id === teeId)) session.teeId = teeId;
   });
 }
 
@@ -187,7 +195,7 @@ function postHoleAndAdvance(matchId) {
     const hole = v.hole;
 
     const ids = match.sideA.concat(match.sideB);
-    const strokes = handicapAllocation(ids);
+    const strokes = handicapAllocation(ids, session);
     ids.forEach((id) => {
       match.grossScores[id] = match.grossScores[id] || {};
       match.grossScores[id][hole.n] = v.gross[id];

@@ -19,9 +19,22 @@ function defaultUi() {
 // Overlays the trip's edited handicaps onto the player list. Called on every
 // state change, so engine code can keep reading PLAYERS_BY_ID[id].hcp.
 function applyHandicaps(state) {
+  // Team names live in data.js, so renaming a team there reaches trips that
+  // were already saved or synced under the old name.
+  state.teamOneName = TEAM_ONE_NAME;
+  state.teamTwoName = TEAM_TWO_NAME;
   PLAYERS.forEach((p) => {
     const v = state.handicaps && state.handicaps[p.id];
     p.hcp = typeof v === 'number' ? v : BASE_HCP[p.id];
+  });
+  state.sessions.forEach(linkSession);
+}
+
+// A match needs to know its session (course + tee) to work out handicap
+// strokes. The link is non-enumerable so it never gets saved or synced.
+function linkSession(session) {
+  session.matches.forEach((m) => {
+    Object.defineProperty(m, '_session', { value: session, enumerable: false, configurable: true, writable: true });
   });
 }
 
@@ -32,9 +45,10 @@ function makeMatch(sideA, sideB, id, format) {
 // Bakes a fixed sequence of hole results (-1/0/1) into a match's gross
 // scores, so computeHoleResults() reproduces exactly that sequence. Used
 // only to build the sample trip.
-function seedResultsIntoMatch(match, course, results) {
+function seedResultsIntoMatch(match, session, results) {
+  const course = COURSES_BY_ID[session.courseId];
   const ids = match.sideA.concat(match.sideB);
-  const strokes = handicapAllocation(ids);
+  const strokes = handicapAllocation(ids, session);
   match.grossScores = {};
   ids.forEach((id) => { match.grossScores[id] = {}; });
   // How many of a side's players beat par net on this hole to produce a
@@ -69,6 +83,7 @@ function buildSessions() {
     { id: 's4', n: 4, day: 'Sun 11/8', courseId: 'tobacco-road', format: 'singles', shape: 'singles', counts: false, tee: 'Tee time TBD' },
   ];
   return cfg.map((c) => Object.assign({}, c, {
+    teeId: COURSES_BY_ID[c.courseId].defaultTee,
     locked: false, matches: [], teamLOrder: teamL.slice(), teamTOrder: teamT.slice(),
   }));
 }
@@ -95,9 +110,8 @@ function seedState(ui) {
     makeMatch(['david', 'lenny'], ['tom', 'ben'], 'm1a', 'fourball'),
     makeMatch(['alex', 'dan'], ['ryan', 'jamey'], 'm1b', 'fourball'),
   ];
-  const s1Course = COURSES_BY_ID[s1.courseId];
-  seedResultsIntoMatch(s1.matches[0], s1Course, [1, 0, 1, 0, 1, 0, -1, 0, 1, 0, 0, -1, 0, 1, 0, 0, 1, 0]); // LAWDs sweep all 3 bets
-  seedResultsIntoMatch(s1.matches[1], s1Course, [-1, 0, 0, 1, 0, 0, -1, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0]); // Turkeys take front + total, back halved
+  seedResultsIntoMatch(s1.matches[0], s1, [1, 0, 1, 0, 1, 0, -1, 0, 1, 0, 0, -1, 0, 1, 0, 0, 1, 0]); // LAWDs sweep all 3 bets
+  seedResultsIntoMatch(s1.matches[1], s1, [-1, 0, 0, 1, 0, 0, -1, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0]); // Jesters take front + total, back halved
 
   // Session 2 (Mid Pines, low ball / high ball): live, 12 holes in. A hole
   // can be worth 2 here, so the first match has a +2 hole.
@@ -108,10 +122,9 @@ function seedState(ui) {
     makeMatch(['david', 'dan'], ['tom', 'jamey'], 'm2a', 'lowhigh'),
     makeMatch(['lenny', 'alex'], ['ben', 'ryan'], 'm2b', 'lowhigh'),
   ];
-  seedResultsIntoMatch(s2.matches[0], COURSES_BY_ID[s2.courseId],
-    [0, 2, 0, -1, 1, 0, 0, 1, 0, 0, 0, 0]); // thru 12, front won 3 up
-  seedResultsIntoMatch(s2.matches[1], COURSES_BY_ID[s2.courseId],
-    [-1, 0, 0, 1, 0, 0, -1, 0, 0, -1, 1, 0]); // thru 12, 1 down
+  seedResultsIntoMatch(s2.matches[0], s2, [0, 2, 0, -1, 1, 0, 0, 1, 0, 0, 0, 0]); // thru 12, front won 3 up
+  seedResultsIntoMatch(s2.matches[1], s2, [-1, 0, 0, 1, 0, 0, -1, 0, 0, -1, 1, 0]); // thru 12, 1 down
+  linkSession(s1); linkSession(s2);
 
   const now = Date.now();
   const ledgerRows = [
@@ -127,7 +140,7 @@ function seedState(ui) {
     ['Hawks Cup', true, 'David & Dan go 2 UP — Dan nets a 4 on the 8th with a shot.', 60e3],
     ['Tom', false, 'Three skins riding on 13. Somebody hole something.', 240e3],
     ['Lenny', false, 'Greenie on 12 and a two-putt. Paid for lunch.', 660e3],
-    ['Hawks Cup', true, 'Turkeys take the 10th — match 2 back to 1 UP.', 1560e3],
+    ['Hawks Cup', true, 'Jesters take the 10th — match 2 back to 1 UP.', 1560e3],
     ['Jamey', false, 'Fined again for the lip-out sulk. Ledger is a crime scene.', 2880e3],
     ['David', false, 'Tobacco Road order of play at dinner. Bring your own excuses.', 3600e3],
   ];
@@ -188,13 +201,14 @@ function assembleState(docs, ui) {
     ms.forEach((m) => { delete m.order; delete m.sessionId; });
     s.matches = ms;
     delete s.order;
+    linkSession(s);
   });
   ledger.sort((a, b) => a.ts - b.ts);
   sideGameEvents.sort((a, b) => a.ts - b.ts);
   feed.sort((a, b) => b.ts - a.ts);
   return {
-    teamOneName: meta.teamOneName || TEAM_ONE_NAME,
-    teamTwoName: meta.teamTwoName || TEAM_TWO_NAME,
+    teamOneName: TEAM_ONE_NAME,
+    teamTwoName: TEAM_TWO_NAME,
     sessions, ledger, sideGameEvents, feed, handicaps, ui,
   };
 }

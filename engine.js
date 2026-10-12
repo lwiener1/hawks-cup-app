@@ -3,26 +3,50 @@
 // module turns them into net scores, Nassau status and cup totals on read.
 //
 // Tournament rules encoded here:
-//  - Handicaps are capped at MAX_HCP. 2v2 matches play off 90% of each
-//    handicap (rounded), strokes off the low player in the match. Singles
-//    play the full difference.
+//  - Each player's Handicap Index is converted to a course handicap for the
+//    tee being played (index x slope/113 + rating - par), capped at MAX_HCP.
+//    2v2 matches then play off 90% of that (rounded), strokes off the low
+//    player in the match. Singles play the full difference.
 //  - Every match is a Nassau: front nine, back nine, overall — 1 point each,
 //    halves split 0.5/0.5.
 //  - Fourball: best net ball per side wins the hole (±1).
 //    Low ball / high ball: best nets compare and worst nets compare, so a
 //    hole is worth up to ±2.
 
-const MAX_HCP = 28;
+const MAX_HCP = 32;
 const TEAM_ALLOWANCE = 0.9;
 const BETS_PER_MATCH = 3;
 
 // ---- handicaps --------------------------------------------------------------
 
-function playingHandicaps(playerIds) {
+// The tee a session is played from (falls back to the course's default).
+function teeFor(session) {
+  const course = COURSES_BY_ID[session.courseId];
+  return course.tees.find((t) => t.id === session.teeId)
+    || course.tees.find((t) => t.id === course.defaultTee) || course.tees[0];
+}
+
+// World Handicap System conversion: index x slope/113 + (rating - par),
+// rounded to a whole number.
+function courseHandicap(index, course, tee) {
+  return Math.round(index * tee.slope / 113 + (tee.rating - (tee.par || course.par)));
+}
+
+// A player's course handicap for a session, before the MAX_HCP cap and allowance.
+// Without a session (no course context) the index itself is used.
+function courseHandicapFor(playerId, session) {
+  const index = PLAYERS_BY_ID[playerId].hcp;
+  if (!session) return Math.round(index);
+  return courseHandicap(index, COURSES_BY_ID[session.courseId], teeFor(session));
+}
+
+// Playing handicap: course handicap, capped at MAX_HCP, then (2v2 only) 90%
+// rounded. `session` supplies the course and tee.
+function playingHandicaps(playerIds, session) {
   const team = playerIds.length > 2;
   const out = {};
   playerIds.forEach((id) => {
-    const h = Math.min(PLAYERS_BY_ID[id].hcp, MAX_HCP);
+    const h = Math.min(courseHandicapFor(id, session), MAX_HCP);
     out[id] = team ? Math.round(h * TEAM_ALLOWANCE) : h;
   });
   return out;
@@ -30,8 +54,8 @@ function playingHandicaps(playerIds) {
 
 // Strokes each player receives: their playing handicap minus the lowest in
 // the match (the low player plays off scratch).
-function handicapAllocation(playerIds) {
-  const eff = playingHandicaps(playerIds);
+function handicapAllocation(playerIds, session) {
+  const eff = playingHandicaps(playerIds, session);
   const low = Math.min.apply(null, playerIds.map((id) => eff[id]));
   const out = {};
   playerIds.forEach((id) => { out[id] = eff[id] - low; });
@@ -62,7 +86,7 @@ const sign = (n) => (n > 0 ? 1 : n < 0 ? -1 : 0);
 // side A ahead, negative = side B.
 function holeBreakdown(match, hole, gross) {
   const ids = match.sideA.concat(match.sideB);
-  const strokes = handicapAllocation(ids);
+  const strokes = handicapAllocation(ids, match._session);
   const nets = {};
   ids.forEach((id) => {
     const g = gross[id] != null ? gross[id] : hole.par;

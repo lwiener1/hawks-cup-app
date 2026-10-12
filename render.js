@@ -244,6 +244,19 @@ function renderSetup(state) {
     </button>`;
   }).join('');
 
+  const course = courseFor(session);
+  const curTee = teeFor(session);
+  const teeOpts = course.tees.map((t) => {
+    const yds = t.total ? ` · ${t.total.toLocaleString()} yds` : '';
+    return `<option value="${t.id}"${t.id === curTee.id ? ' selected' : ''}>${esc(t.name)} · ${t.rating}/${t.slope}${yds}</option>`;
+  }).join('');
+  const teePicker = `
+    <div>
+      <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:7px">Tees</div>
+      <select data-action="set-tee" data-session="${session.id}" class="field-input" style="padding:11px 10px;font-weight:800">${teeOpts}</select>
+      <div style="font-size:12px;line-height:1.45;color:rgba(32,30,29,.7);margin-top:7px">Shown as rating/slope. Par ${course.par}. Each player's course handicap is worked out from their Handicap Index for these tees.</div>
+    </div>`;
+
   const countsBtns = [{ v: true, name: 'Counts' }, { v: false, name: 'Doesn’t count' }].map((o) => {
     const on = counts === o.v;
     return `<button data-action="${on ? 'noop' : 'toggle-counts'}" data-session="${session.id}" style="flex:1;border:0;background:${on ? 'var(--accent)' : 'var(--bg)'};color:${on ? '#fff' : 'var(--ink)'};font-weight:800;font-size:12px;padding:11px 8px;text-align:left">${o.name}</button>`;
@@ -259,7 +272,7 @@ function renderSetup(state) {
     </div>
     <div>
       <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:7px">Handicap</div>
-      <div style="border:1px solid var(--rule);padding:9px 10px;font-size:12px;font-weight:800">${session.shape === 'singles' ? 'Full difference' : '90% of handicap, strokes off the low player'} &middot; max ${MAX_HCP}</div>
+      <div style="border:1px solid var(--rule);padding:9px 10px;font-size:12px;font-weight:800">Course handicap (index &times; slope &divide; 113 + rating &minus; par), max ${MAX_HCP} &middot; ${session.shape === 'singles' ? 'full difference' : '90%, strokes off the low player'}</div>
     </div>`;
 
   // One dropdown per player slot. Slot k of a team's order is who plays in
@@ -268,7 +281,7 @@ function renderSetup(state) {
   const slotSelect = (team, slot) => {
     const order = team === 'L' ? session.teamLOrder : session.teamTOrder;
     const roster = PLAYERS.filter((p) => p.team === team);
-    const opts = roster.map((p) => `<option value="${p.id}"${p.id === order[slot] ? ' selected' : ''}>${p.name} (${p.hcp})</option>`).join('');
+    const opts = roster.map((p) => `<option value="${p.id}"${p.id === order[slot] ? ' selected' : ''}>${p.name} (CH ${Math.min(courseHandicapFor(p.id, session), MAX_HCP)})</option>`).join('');
     return `<select data-action="set-slot" data-session="${session.id}" data-team="${team}" data-slot="${slot}" class="field-input" style="padding:9px 8px;border-left:4px solid ${team === 'L' ? 'var(--accent)' : 'var(--ink)'}">${opts}</select>`;
   };
   const sideCol = (team, matchIdx) => Array.from({ length: perSide }, (_, k) => slotSelect(team, matchIdx * perSide + k)).join('');
@@ -276,7 +289,7 @@ function renderSetup(state) {
     <div style="padding:10px;border-bottom:1px solid var(--rule)">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
         <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">Match ${i + 1}</div>
-        <div style="font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);text-align:right">${esc(pairingStrokesNote(p.sideA, p.sideB))}</div>
+        <div style="font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);text-align:right">${esc(pairingStrokesNote(p.sideA, p.sideB, session))}</div>
       </div>
       <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center">
         <div style="display:flex;flex-direction:column;gap:6px">${sideCol('L', i)}</div>
@@ -300,10 +313,11 @@ function renderSetup(state) {
       <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:7px">Game</div>
       <div style="display:flex;flex-direction:column;gap:1px;background:var(--rule);border:1px solid var(--rule)">${gameBtns}</div>
     </div>
+    ${teePicker}
     ${teamEvent}
     <div>
       <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Who plays whom &mdash; ${session.shape === 'singles' ? '4 singles matches' : pairings.length + ' matches'}</div>
-      <div style="font-size:12px;line-height:1.45;color:rgba(32,30,29,.7);margin-bottom:8px">${esc(state.teamOneName)} on the left, ${esc(state.teamTwoName)} on the right. Tap a name to change it &mdash; picking someone already in another match swaps the two. (Handicap in brackets.)</div>
+      <div style="font-size:12px;line-height:1.45;color:rgba(32,30,29,.7);margin-bottom:8px">${esc(state.teamOneName)} on the left, ${esc(state.teamTwoName)} on the right. Tap a name to change it &mdash; picking someone already in another match swaps the two. (CH = course handicap on these tees.)</div>
       <div style="border:1px solid var(--rule)">${pairRows}</div>
     </div>
     ${hasScores ? `<div style="border:1px solid var(--accent);padding:10px;font-size:12px;line-height:1.45"><strong style="color:var(--accent)">Scores already entered.</strong> Locking in again replaces this round's matches and clears its scores.</div>` : ''}
@@ -324,7 +338,9 @@ function renderCard(state) {
   const headerLabel = matchStateLabel(committedResults, course.holes.length, nickA, nickB, maxPerHole(match.format));
 
   const ids = match.sideA.concat(match.sideB);
-  const strokes = handicapAllocation(ids);
+  const strokes = handicapAllocation(ids, session);
+  const cardTee = teeFor(session);
+  const holeYds = cardTee.yards ? cardTee.yards[hole.n - 1] : null;
   const nets = {};
   ids.forEach((id) => { nets[id] = netScore(view.gross[id], strokes[id], hole.si); });
   const bd = holeBreakdown(match, hole, view.gross);
@@ -365,7 +381,7 @@ function renderCard(state) {
           <span style="font-size:14px;font-weight:800">${p.name}</span>
           <span style="font-size:11px;font-weight:800;color:var(--accent)">${shots === 0 ? '' : shots === 1 ? '•' : '••'}</span>
         </div>
-        <div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">Hcp ${p.hcp} · plays off ${strokes[id]} · net ${net}</div>
+        <div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">Idx ${p.hcp} · CH ${Math.min(courseHandicapFor(id, session), MAX_HCP)} · plays off ${strokes[id]} · net ${net}</div>
       </div>
       <div style="display:flex;border:1px solid var(--rule)">
         <button data-action="step-gross" data-match="${match.id}" data-player="${id}" data-delta="-1" style="width:32px;height:34px;border:0;border-right:1px solid var(--rule);background:transparent;font-size:15px;font-weight:800">&minus;</button>
@@ -394,14 +410,14 @@ function renderCard(state) {
     </div>
     <div style="padding:0 18px 12px;border-bottom:2px solid var(--rule);margin-top:-1px">
       ${nassauChips(headerLabel.segments)}
-      <div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:6px">${esc(gameFor(session).name)} &middot; Nassau &middot; ${sessionCounts(session) ? 'counts toward the team event' : 'does not count toward the team event'}</div>
+      <div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:6px">${esc(gameFor(session).name)} &middot; Nassau &middot; ${esc(cardTee.name)} tees &middot; ${sessionCounts(session) ? 'counts toward the team event' : 'does not count toward the team event'}</div>
     </div>
     <div style="display:flex;gap:2px;padding:10px 18px;border-bottom:1px solid var(--rule)">${cardHoles}</div>
     <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 18px;border-bottom:2px solid var(--rule)">
       <button data-action="step-hole" data-match="${match.id}" data-delta="-1" style="border:1px solid var(--rule);background:transparent;font-weight:800;font-size:16px;width:34px;height:34px">&larr;</button>
       <div style="text-align:center">
         <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Hole ${hole.n}</div>
-        <div style="font-size:15px;font-weight:800;letter-spacing:-.01em">Par ${hole.par} · ${hole.yds ? hole.yds + ' yds · ' : ''}SI ${hole.si}</div>
+        <div style="font-size:15px;font-weight:800;letter-spacing:-.01em">Par ${hole.par} · ${holeYds ? holeYds + ' yds · ' : ''}SI ${hole.si}</div>
       </div>
       <button data-action="step-hole" data-match="${match.id}" data-delta="1" style="border:1px solid var(--rule);background:transparent;font-weight:800;font-size:16px;width:34px;height:34px">&rarr;</button>
     </div>
@@ -554,7 +570,7 @@ function renderTeams(state) {
         </div>
         <div style="text-align:right">
           <div style="font-size:17px;font-weight:800">${p.hcp}</div>
-          <div style="font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)">hcp · edit</div>
+          <div style="font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)">index · edit</div>
         </div>
       </button>`;
     }).join('');
@@ -573,7 +589,7 @@ function renderTeams(state) {
 
   const courseRows = COURSES.map((c) => `
     <div style="display:flex;align-items:center;gap:12px;padding:10px 18px;border-top:1px solid var(--rule)">
-      <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800">${esc(c.name)}</div><div style="font-size:11px;color:var(--muted)">${c.extra ? esc(c.note) : `Par ${c.par} · ${c.holes.reduce((a, h) => a + h.yds, 0).toLocaleString()} · ${esc(c.note)}`}</div></div>
+      <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800">${esc(c.name)}</div><div style="font-size:11px;color:var(--muted)">${c.extra ? esc(c.note) : [`Par ${c.par}`, `${c.tees.length} tees`, c.note].filter(Boolean).map(esc).join(' · ')}</div></div>
       <div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">${esc((state.sessions.find((s) => s.courseId === c.id) || {}).day || '')}</div>
     </div>`).join('');
 
@@ -649,8 +665,8 @@ function renderHcpModal(state) {
   <div class="modal-backdrop" data-action="close-hcp">
     <div class="modal-sheet" data-action="noop">
       <div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Handicap · ${esc(p.name)}</div>
-      <label style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">Whole number &middot; anything above ${MAX_HCP} plays as ${MAX_HCP} (minus sign for plus-handicaps)
-        <input id="hcp-input" class="field-input" type="number" inputmode="numeric" step="1" min="-10" max="54" value="${p.hcp}" style="margin-top:4px">
+      <label style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">Handicap Index (e.g. 11.4) &middot; turned into a course handicap per round, max ${MAX_HCP}
+        <input id="hcp-input" class="field-input" type="number" inputmode="decimal" step="0.1" min="-10" max="54" value="${p.hcp}" style="margin-top:4px">
       </label>
       ${warn}
       <div style="display:flex;gap:10px;margin-top:6px">

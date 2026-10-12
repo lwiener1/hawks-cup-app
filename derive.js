@@ -94,7 +94,7 @@ function computeAwards(state) {
     const course = courseFor(session);
     session.matches.forEach((match) => {
       const ids = match.sideA.concat(match.sideB);
-      const strokes = handicapAllocation(ids);
+      const strokes = handicapAllocation(ids, session);
       ids.forEach((id) => {
         const scores = match.grossScores[id] || {};
         Object.keys(scores).forEach((holeN) => {
