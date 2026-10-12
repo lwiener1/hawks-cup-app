@@ -15,12 +15,12 @@ function headerInfo(state) {
   const screen = state.ui.screen;
   if (screen === 'setup') {
     const session = findSession(state.ui.setupSessionId);
-    return { kicker: `Session ${session.n}`, title: 'Set the game', right: 'Captains' };
+    return { kicker: `Session ${session.n}`, title: 'Set the game', right: 'Anyone can edit' };
   }
   if (screen === 'card') {
     const session = sessionForMatch(state.ui.cardMatchId);
     const course = courseFor(session);
-    const game = GAMES_BY_ID[session.format];
+    const game = gameFor(session);
     return { kicker: `${course.name} · ${game.name}`, title: 'Match card', right: `Scoring: ${myName(state)}` };
   }
   const map = {
@@ -29,7 +29,7 @@ function headerInfo(state) {
     money: { kicker: 'Games & money', title: 'The pot', right: moneyMovedLabel(state) },
     feed: { kicker: 'The group', title: 'Chatter', right: '8 golfers' },
     team: { kicker: 'Rosters', title: 'Teams & courses', right: '8 golfers' },
-    trophy: { kicker: 'Projection', title: 'Where it lands', right: '12 pts' },
+    trophy: { kicker: 'Projection', title: 'Where it lands', right: `${fmtPoints(cupTotals(state.sessions).available)} pts` },
   };
   return map[screen] || map.cup;
 }
@@ -50,6 +50,7 @@ function renderHeader(state) {
   return `
   <div style="flex:none;padding:env(safe-area-inset-top,20px) 18px 10px;border-bottom:2px solid var(--rule);display:flex;align-items:flex-end;gap:10px;background:var(--bg)">
     <button data-action="go-back" style="display:${showBack ? 'flex' : 'none'};align-items:center;justify-content:center;width:26px;height:26px;padding:0;margin-bottom:2px;border:1px solid var(--rule);background:transparent;color:var(--ink);font-size:14px;line-height:1">&larr;</button>
+    <img src="./logo.png" alt="Hawks" width="38" height="36" style="flex:none;display:${showBack ? 'none' : 'block'};width:38px;height:36px;margin-bottom:1px">
     <div style="flex:1;min-width:0">
       <div style="font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--accent)">${esc(info.kicker)}</div>
       <div style="font-size:21px;font-weight:800;letter-spacing:-.015em;line-height:1.1">${esc(info.title)}</div>
@@ -72,7 +73,16 @@ function renderTabBar(state) {
 }
 
 function holeFill(r) {
-  return r === 1 ? 'var(--accent)' : r === -1 ? 'var(--ink)' : 'var(--rule-soft)';
+  return r > 0 ? 'var(--accent)' : r < 0 ? 'var(--ink)' : 'var(--rule-soft)';
+}
+
+// "Front LAWDs 2 UP · Back — · Total LAWDs 1 UP", one chip per Nassau bet.
+function nassauChips(segments) {
+  return `<div style="display:flex;gap:1px;background:var(--rule);border:1px solid var(--rule);margin-top:9px">${segments.map((s) => `
+    <div style="flex:1;min-width:0;background:var(--bg);padding:5px 6px">
+      <div style="font-size:8px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:rgba(32,30,29,.45)">${s.label}${s.final ? ' &middot; final' : ''}</div>
+      <div style="font-size:11px;font-weight:800;color:${s.color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.text)}</div>
+    </div>`).join('')}</div>`;
 }
 
 function holeStrip(results, totalHoles) {
@@ -86,12 +96,12 @@ function holeStrip(results, totalHoles) {
 // ---------- Cup ----------
 function renderCup(state) {
   const totals = cupTotals(state.sessions);
-  const pct = (n) => `${(n / 12) * 100}%`;
+  const pct = (n) => `${(n / (totals.available || 1)) * 100}%`;
   const live = allMatches(state).filter(({ label }) => !label.done && label.text !== 'Not started');
 
   const liveRows = live.map(({ session, course, match, results, label }) => {
     const shortA = playerNames(match.sideA), shortB = playerNames(match.sideB);
-    const lbl = matchStateLabel(results, course.holes.length, sideShortLabel(state, session, match.sideA), sideShortLabel(state, session, match.sideB));
+    const lbl = matchStateLabel(results, course.holes.length, sideShortLabel(state, session, match.sideA), sideShortLabel(state, session, match.sideB), maxPerHole(match.format));
     return `
     <button data-action="open-card" data-match="${match.id}" style="display:block;width:100%;text-align:left;border:0;border-top:1px solid var(--rule);background:transparent;padding:12px 18px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
@@ -103,20 +113,22 @@ function renderCup(state) {
         <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">thru ${results.length}</div>
       </div>
       ${holeStrip(results, course.holes.length)}
+      ${nassauChips(lbl.segments)}
     </button>`;
   }).join('') || `<div style="padding:14px 18px;font-size:13px;color:var(--muted)">Nothing live right now.</div>`;
 
   const sessionRows = state.sessions.map((session, idx) => {
     const course = courseFor(session);
     const status = sessionStatus(session);
-    const game = GAMES_BY_ID[session.format];
+    const game = gameFor(session);
+    const counts = sessionCounts(session);
     let result = '—', resColor = 'var(--muted)';
-    if (course.extra) { result = '—'; }
-    else if (status === 'final') {
+    if (status === 'final') {
       const pts = sessionPoints(session);
-      result = `${fmtPoints(pts.team1)} – ${fmtPoints(pts.team2)}`; resColor = 'var(--accent)';
-    } else if (status === 'in-play') { result = 'Live'; resColor = 'var(--accent)'; }
-    const fmt = course.extra ? 'Individual games · no cup pts' : `${game.name} · ${session.points} pts`;
+      result = counts ? `${fmtPoints(pts.team1)} – ${fmtPoints(pts.team2)}` : 'Final';
+      resColor = counts ? 'var(--accent)' : 'var(--muted)';
+    } else if (status === 'in-play') { result = 'Live'; resColor = counts ? 'var(--accent)' : 'var(--ink)'; }
+    const fmt = `${game.name} · ${counts ? sessionPointValue(session) + ' pts' : 'no team pts'}`;
     return `
     <button data-action="${status === 'not-set' ? 'open-setup' : 'open-rounds'}" data-session="${session.id}" style="display:flex;width:100%;gap:12px;align-items:center;text-align:left;border:0;border-top:1px solid var(--rule);background:${idx % 2 ? 'var(--row-alt)' : 'transparent'};padding:11px 18px">
       <div style="font-size:11px;font-weight:800;color:rgba(32,30,29,.35);width:14px">${session.n}</div>
@@ -146,11 +158,11 @@ function renderCup(state) {
     </div>
     <div style="display:flex;height:8px;border-bottom:2px solid var(--rule)">
       <div style="width:${pct(totals.team1)};background:var(--accent)"></div>
-      <div style="width:${pct(12 - totals.team1 - totals.team2)};background:var(--rule-soft)"></div>
+      <div style="width:${pct(Math.max(0, totals.available - totals.team1 - totals.team2))};background:var(--rule-soft)"></div>
       <div style="width:${pct(totals.team2)};background:var(--ink)"></div>
     </div>
     <div style="display:flex;justify-content:space-between;padding:7px 18px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-bottom:2px solid var(--rule)">
-      <span>${fmtPoints(totals.settled)} of 12 settled</span><span>6½ retains the cup</span>
+      <span>${fmtPoints(totals.settled)} of ${fmtPoints(totals.available)} settled</span><span>${fmtPoints(totals.toWin)} wins the cup</span>
     </div>
     <div style="padding:14px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">On the course now</div>
     ${liveRows}
@@ -165,19 +177,20 @@ function renderRounds(state) {
   return state.sessions.map((session) => {
     const course = courseFor(session);
     const status = sessionStatus(session);
-    const game = GAMES_BY_ID[session.format];
-    const statusLabel = { 'final': 'Final', 'in-play': 'In play', 'not-set': 'Not set', 'extra': 'Extra' }[status];
-    const fmtLine = course.extra ? 'Skins, CTP, side bets' : `${game.name}${session.shape === 'team' ? ', 2v2' : ''} · ${session.points} points · ${session.tee}`;
+    const game = gameFor(session);
+    const counts = sessionCounts(session);
+    const statusLabel = { 'final': 'Final', 'in-play': 'In play', 'not-set': 'Not set' }[status];
+    const fmtLine = `${game.name}${session.shape === 'team' ? ', 2v2' : ', singles'} · Nassau · ${counts ? sessionPointValue(session) + ' points' : 'no team points'} · ${session.tee}`;
 
     let matchRows;
     if (session.matches.length === 0) {
       matchRows = `<div style="display:flex;gap:10px;align-items:center;border-top:1px solid var(--rule);padding:9px 0">
-        <div style="flex:1;min-width:0;font-size:13px;font-weight:800;color:var(--muted)">${course.extra ? 'Skins, CTP, side bets' : 'Pairings open'}</div>
+        <div style="flex:1;min-width:0;font-size:13px;font-weight:800;color:var(--muted)">Pairings open</div>
       </div>`;
     } else {
       matchRows = session.matches.map((m) => {
         const results = computeHoleResults(m, course.holes);
-        const label = matchStateLabel(results, course.holes.length, sideShortLabel(state, session, m.sideA), sideShortLabel(state, session, m.sideB));
+        const label = matchStateLabel(results, course.holes.length, sideShortLabel(state, session, m.sideA), sideShortLabel(state, session, m.sideB), maxPerHole(m.format));
         const showScore = !label.done;
         return `
         <div style="display:flex;gap:10px;align-items:center;border-top:1px solid var(--rule);padding:9px 0">
@@ -187,7 +200,8 @@ function renderRounds(state) {
           </div>
           <div style="font-size:12px;font-weight:800;color:${label.color};text-align:right;white-space:nowrap">${esc(label.text)}${(label.done || results.length === 0) ? '' : ` · ${results.length}`}</div>
           <button data-action="open-card" data-match="${m.id}" style="display:${showScore ? 'inline-block' : 'none'};border:1px solid var(--accent);background:transparent;color:var(--accent);font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:6px 9px">Score</button>
-        </div>`;
+        </div>
+        ${results.length ? `<div style="margin:-2px 0 9px">${nassauChips(label.segments)}</div>` : ''}`;
       }).join('');
     }
 
@@ -208,8 +222,8 @@ function renderRounds(state) {
 // ---------- Setup ----------
 function renderSetup(state) {
   const session = findSession(state.ui.setupSessionId);
-  const game = GAMES_BY_ID[session.format];
-  const isMatchbox = COURSES_BY_ID[session.courseId].extra;
+  const game = gameFor(session);
+  const counts = sessionCounts(session);
   const pairings = pairingsFromOrders(session.shape, session.teamLOrder, session.teamTOrder);
 
   const courseBtns = COURSES.map((c, i) => {
@@ -230,35 +244,47 @@ function renderSetup(state) {
     </button>`;
   }).join('');
 
-  const pointsOrNote = isMatchbox
-    ? `<div style="border:1px solid var(--accent);padding:11px;font-size:12px;line-height:1.5">
-        <div style="font-weight:800;color:var(--accent);letter-spacing:.06em;text-transform:uppercase;font-size:10px;margin-bottom:4px">Side games only</div>
-        12 holes, individual matches and games &mdash; doesn't count toward the 12 Hawks Cup points.
-      </div>`
-    : `<div style="display:flex;gap:12px">
-        <div style="flex:1">
-          <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:7px">Points at stake</div>
-          <div style="display:flex;border:1px solid var(--rule)">
-            <button data-action="bump-points" data-session="${session.id}" data-delta="-1" style="width:38px;border:0;border-right:1px solid var(--rule);background:transparent;font-size:16px;font-weight:800">&minus;</button>
-            <div style="flex:1;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800">${session.points}</div>
-            <button data-action="bump-points" data-session="${session.id}" data-delta="1" style="width:38px;border:0;border-left:1px solid var(--rule);background:transparent;font-size:16px;font-weight:800">+</button>
-          </div>
-        </div>
-        <div style="flex:1">
-          <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:7px">Handicap</div>
-          <div style="border:1px solid var(--rule);padding:9px 10px;font-size:12px;font-weight:800">Difference only</div>
-        </div>
-      </div>`;
+  const countsBtns = [{ v: true, name: 'Counts' }, { v: false, name: 'Doesn’t count' }].map((o) => {
+    const on = counts === o.v;
+    return `<button data-action="${on ? 'noop' : 'toggle-counts'}" data-session="${session.id}" style="flex:1;border:0;background:${on ? 'var(--accent)' : 'var(--bg)'};color:${on ? '#fff' : 'var(--ink)'};font-weight:800;font-size:12px;padding:11px 8px;text-align:left">${o.name}</button>`;
+  }).join('');
+  const matchCount = session.shape === 'singles' ? 4 : 2;
+  const teamEvent = `
+    <div>
+      <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:7px">Team event</div>
+      <div style="display:flex;background:var(--rule);gap:1px;border:1px solid var(--rule)">${countsBtns}</div>
+      <div style="font-size:12px;line-height:1.5;color:rgba(32,30,29,.7);margin-top:7px">${counts
+        ? `Nassau: front, back and overall are 1 point each. ${matchCount} matches &times; 3 = <strong>${matchCount * 3} points</strong> on offer.`
+        : 'Still played as a Nassau, but none of it counts toward the Hawks Cup points.'}</div>
+    </div>
+    <div>
+      <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:7px">Handicap</div>
+      <div style="border:1px solid var(--rule);padding:9px 10px;font-size:12px;font-weight:800">${session.shape === 'singles' ? 'Full difference' : '90% of handicap, strokes off the low player'} &middot; max ${MAX_HCP}</div>
+    </div>`;
 
+  // One dropdown per player slot. Slot k of a team's order is who plays in
+  // that position; choosing someone already placed swaps the two.
+  const perSide = session.shape === 'singles' ? 1 : 2;
+  const slotSelect = (team, slot) => {
+    const order = team === 'L' ? session.teamLOrder : session.teamTOrder;
+    const roster = PLAYERS.filter((p) => p.team === team);
+    const opts = roster.map((p) => `<option value="${p.id}"${p.id === order[slot] ? ' selected' : ''}>${p.name} (${p.hcp})</option>`).join('');
+    return `<select data-action="set-slot" data-session="${session.id}" data-team="${team}" data-slot="${slot}" class="field-input" style="padding:9px 8px;border-left:4px solid ${team === 'L' ? 'var(--accent)' : 'var(--ink)'}">${opts}</select>`;
+  };
+  const sideCol = (team, matchIdx) => Array.from({ length: perSide }, (_, k) => slotSelect(team, matchIdx * perSide + k)).join('');
   const pairRows = pairings.map((p, i) => `
-    <div style="display:flex;align-items:center;gap:10px;padding:10px;border-bottom:1px solid var(--rule)">
-      <div style="font-size:10px;font-weight:800;color:rgba(32,30,29,.35);width:16px">${i + 1}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:800">${esc(playerNames(p.sideA))}</div>
-        <div style="font-size:13px;font-weight:800;color:rgba(32,30,29,.7)">${esc(playerNames(p.sideB))}</div>
+    <div style="padding:10px;border-bottom:1px solid var(--rule)">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">Match ${i + 1}</div>
+        <div style="font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);text-align:right">${esc(pairingStrokesNote(p.sideA, p.sideB))}</div>
       </div>
-      <div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:right">${esc(pairingStrokesNote(p.sideA, p.sideB))}</div>
+      <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center">
+        <div style="display:flex;flex-direction:column;gap:6px">${sideCol('L', i)}</div>
+        <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:rgba(32,30,29,.35)">V</div>
+        <div style="display:flex;flex-direction:column;gap:6px">${sideCol('T', i)}</div>
+      </div>
     </div>`).join('');
+  const hasScores = session.matches.some((m) => Object.keys(m.grossScores).some((id) => Object.keys(m.grossScores[id]).length));
 
   return `
   <div style="padding:16px 18px 30px;display:flex;flex-direction:column;gap:16px">
@@ -274,15 +300,14 @@ function renderSetup(state) {
       <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:7px">Game</div>
       <div style="display:flex;flex-direction:column;gap:1px;background:var(--rule);border:1px solid var(--rule)">${gameBtns}</div>
     </div>
-    ${pointsOrNote}
+    ${teamEvent}
     <div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px">
-        <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)">Pairings &mdash; ${session.shape === 'singles' ? '4 singles' : pairings.length + ' matches'}</div>
-        <button data-action="captains-draft" data-session="${session.id}" style="border:0;background:transparent;color:var(--accent);font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:0">Captains' draft</button>
-      </div>
+      <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Who plays whom &mdash; ${session.shape === 'singles' ? '4 singles matches' : pairings.length + ' matches'}</div>
+      <div style="font-size:12px;line-height:1.45;color:rgba(32,30,29,.7);margin-bottom:8px">${esc(state.teamOneName)} on the left, ${esc(state.teamTwoName)} on the right. Tap a name to change it &mdash; picking someone already in another match swaps the two. (Handicap in brackets.)</div>
       <div style="border:1px solid var(--rule)">${pairRows}</div>
     </div>
-    <button data-action="lock-in" data-session="${session.id}" class="btn btn-primary btn-block">Lock in session</button>
+    ${hasScores ? `<div style="border:1px solid var(--accent);padding:10px;font-size:12px;line-height:1.45"><strong style="color:var(--accent)">Scores already entered.</strong> Locking in again replaces this round's matches and clears its scores.</div>` : ''}
+    <button data-action="lock-in" data-session="${session.id}" class="btn btn-primary btn-block">${session.locked ? 'Lock in again' : 'Lock in session'}</button>
   </div>`;
 }
 
@@ -296,19 +321,25 @@ function renderCard(state) {
   const committedResults = view.results;
   const shortA = playerNames(match.sideA), shortB = playerNames(match.sideB);
   const nickA = sideShortLabel(state, session, match.sideA), nickB = sideShortLabel(state, session, match.sideB);
-  const headerLabel = matchStateLabel(committedResults, course.holes.length, nickA, nickB);
+  const headerLabel = matchStateLabel(committedResults, course.holes.length, nickA, nickB, maxPerHole(match.format));
 
   const ids = match.sideA.concat(match.sideB);
   const strokes = handicapAllocation(ids);
   const nets = {};
   ids.forEach((id) => { nets[id] = netScore(view.gross[id], strokes[id], hole.si); });
-  const bestA = Math.min.apply(null, match.sideA.map((id) => nets[id]));
-  const bestB = Math.min.apply(null, match.sideB.map((id) => nets[id]));
-  const holeDelta = bestA < bestB ? 1 : bestA > bestB ? -1 : 0;
-  const holeResultText = holeDelta === 1 ? `${nickA} win ${bestA} to ${bestB}`
-    : holeDelta === -1 ? `${nickB} win ${bestB} to ${bestA}`
-    : `Halved in ${bestA}`;
-  const holeResultColor = holeDelta === 1 ? 'var(--accent)' : holeDelta === -1 ? 'var(--ink)' : 'rgba(32,30,29,.6)';
+  const bd = holeBreakdown(match, hole, view.gross);
+  const holeDelta = bd.result;
+  const winner = holeDelta > 0 ? nickA : nickB;
+  let holeResultText;
+  if (match.format === 'lowhigh') {
+    const detail = `low ${bd.lowA}–${bd.lowB}, high ${bd.highA}–${bd.highB}`;
+    holeResultText = holeDelta === 0 ? `Halved · ${detail}` : `${winner} +${Math.abs(holeDelta)} · ${detail}`;
+  } else if (holeDelta === 0) {
+    holeResultText = `Halved in ${bd.lowA}`;
+  } else {
+    holeResultText = holeDelta > 0 ? `${nickA} win ${bd.lowA} to ${bd.lowB}` : `${nickB} win ${bd.lowB} to ${bd.lowA}`;
+  }
+  const holeResultColor = holeDelta > 0 ? 'var(--accent)' : holeDelta < 0 ? 'var(--ink)' : 'rgba(32,30,29,.6)';
 
   const cardHoles = course.holes.map((h, i) => {
     let fill;
@@ -361,12 +392,16 @@ function renderCard(state) {
         <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">thru ${committedResults.length}</div>
       </div>
     </div>
+    <div style="padding:0 18px 12px;border-bottom:2px solid var(--rule);margin-top:-1px">
+      ${nassauChips(headerLabel.segments)}
+      <div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:6px">${esc(gameFor(session).name)} &middot; Nassau &middot; ${sessionCounts(session) ? 'counts toward the team event' : 'does not count toward the team event'}</div>
+    </div>
     <div style="display:flex;gap:2px;padding:10px 18px;border-bottom:1px solid var(--rule)">${cardHoles}</div>
     <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 18px;border-bottom:2px solid var(--rule)">
       <button data-action="step-hole" data-match="${match.id}" data-delta="-1" style="border:1px solid var(--rule);background:transparent;font-weight:800;font-size:16px;width:34px;height:34px">&larr;</button>
       <div style="text-align:center">
         <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Hole ${hole.n}</div>
-        <div style="font-size:15px;font-weight:800;letter-spacing:-.01em">Par ${hole.par} · ${hole.yds} yds · SI ${hole.si}</div>
+        <div style="font-size:15px;font-weight:800;letter-spacing:-.01em">Par ${hole.par} · ${hole.yds ? hole.yds + ' yds · ' : ''}SI ${hole.si}</div>
       </div>
       <button data-action="step-hole" data-match="${match.id}" data-delta="1" style="border:1px solid var(--rule);background:transparent;font-weight:800;font-size:16px;width:34px;height:34px">&rarr;</button>
     </div>
@@ -570,8 +605,10 @@ function renderTrophy(state) {
   const { totals, note } = trophyProjection(state);
   const leaderName = totals.team1 >= totals.team2 ? state.teamOneName : state.teamTwoName;
   const hi = Math.max(totals.team1, totals.team2), lo = Math.min(totals.team1, totals.team2);
-  const retains = hi >= 6.5;
-  const headline = `${leaderName} ${retains ? 'retain' : 'lead'} the Hawks Cup`;
+  const wins = hi >= totals.toWin;
+  const headline = totals.team1 === totals.team2
+    ? 'All square in the Hawks Cup'
+    : `${leaderName} ${wins ? 'win' : 'lead'} the Hawks Cup`;
   const awards = computeAwards(state);
   const awardRows = awards.map((a) => `
     <div style="display:flex;gap:12px;align-items:baseline;padding:11px 18px;border-top:1px solid var(--rule)">
@@ -612,7 +649,7 @@ function renderHcpModal(state) {
   <div class="modal-backdrop" data-action="close-hcp">
     <div class="modal-sheet" data-action="noop">
       <div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Handicap · ${esc(p.name)}</div>
-      <label style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">Whole number (use a minus for plus-handicaps)
+      <label style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">Whole number &middot; anything above ${MAX_HCP} plays as ${MAX_HCP} (minus sign for plus-handicaps)
         <input id="hcp-input" class="field-input" type="number" inputmode="numeric" step="1" min="-10" max="54" value="${p.hcp}" style="margin-top:4px">
       </label>
       ${warn}
@@ -631,7 +668,10 @@ function renderWelcome(state) {
   return `
   <div class="modal-backdrop">
     <div class="modal-sheet" data-action="noop" style="max-height:92vh;overflow-y:auto">
-      <div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Welcome to the Hawks Cup</div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <img src="./logo.png" alt="Hawks" width="52" height="50" style="width:52px;height:50px">
+        <div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Welcome to the Hawks Cup</div>
+      </div>
       ${needCode ? `
       <label style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">Trip code (from the group text)
         <input id="trip-code-input" class="field-input" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="e.g. hawks-7k2q" style="margin-top:4px">

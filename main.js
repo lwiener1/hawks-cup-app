@@ -13,9 +13,14 @@ document.addEventListener('click', (ev) => {
     case 'pick-course': pickCourse(a.session, a.course); break;
     case 'pick-shape': pickShape(a.session, a.shape); break;
     case 'pick-game': pickGame(a.session, a.game); break;
-    case 'bump-points': bumpPoints(a.session, Number(a.delta)); break;
-    case 'captains-draft': captainsDraft(a.session); break;
-    case 'lock-in': lockInSession(a.session); break;
+    case 'toggle-counts': toggleCounts(a.session); break;
+    case 'lock-in': {
+      const s = findSession(a.session);
+      const hasScores = s.matches.some((m) => Object.keys(m.grossScores).some((id) => Object.keys(m.grossScores[id]).length));
+      if (hasScores && !confirm('This round already has scores. Locking in again replaces its matches and CLEARS those scores for everyone. Continue?')) break;
+      lockInSession(a.session);
+      break;
+    }
     case 'step-gross': stepGross(a.match, a.player, Number(a.delta)); break;
     case 'toggle-tag': toggleTag(a.match, a.tag); break;
     case 'go-to-hole': goToHole(a.match, Number(a.idx)); break;
@@ -74,6 +79,13 @@ document.addEventListener('click', (ev) => {
     }
     default: break; // includes 'noop'
   }
+});
+
+// <select> pickers fire `change`, not `click`.
+document.addEventListener('change', (ev) => {
+  const el = ev.target.closest('select[data-action]');
+  if (!el) return;
+  if (el.dataset.action === 'set-slot') setSlot(el.dataset.session, el.dataset.team, Number(el.dataset.slot), el.value);
 });
 
 initStore();

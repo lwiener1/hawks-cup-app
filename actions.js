@@ -9,15 +9,6 @@ function ordinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-function shuffled(arr) {
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
 function myName(state) {
   return state.ui.me ? PLAYERS_BY_ID[state.ui.me].name : 'Someone';
 }
@@ -34,17 +25,16 @@ function pairingsFromOrders(shape, teamLOrder, teamTOrder) {
   ];
 }
 
+// Who gets how many strokes in a pairing, under the match's handicap rule
+// (singles: full difference; 2v2: 90% of each, strokes off the low player).
 function pairingStrokesNote(sideA, sideB) {
   const ids = sideA.concat(sideB);
   const strokes = handicapAllocation(ids);
+  const receivers = ids.filter((id) => strokes[id] > 0);
+  if (!receivers.length) return 'Off scratch';
+  if (sideA.length === 1) return `${PLAYERS_BY_ID[receivers[0]].name} gets ${strokes[receivers[0]]}`;
   const low = ids.find((id) => strokes[id] === 0);
-  if (ids.every((id) => strokes[id] === 0)) return 'Off scratch';
-  if (sideA.length === 1) {
-    const giver = strokes[sideA[0]] > 0 ? sideA[0] : sideB[0];
-    const n = Math.abs(PLAYERS_BY_ID[sideA[0]].hcp - PLAYERS_BY_ID[sideB[0]].hcp);
-    return n === 0 ? 'Off scratch' : `${PLAYERS_BY_ID[giver].name} +${n}`;
-  }
-  return `${PLAYERS_BY_ID[low].name} off scratch`;
+  return `${PLAYERS_BY_ID[low].name} low · ` + receivers.map((id) => `${PLAYERS_BY_ID[id].name} +${strokes[id]}`).join(', ');
 }
 
 function goScreen(screen) {
@@ -70,8 +60,6 @@ function pickCourse(sessionId, courseId) {
   update((state) => {
     const session = findSession(sessionId);
     session.courseId = courseId;
-    if (COURSES_BY_ID[courseId].extra) session.points = 0;
-    else if (session.points === 0) session.points = session.shape === 'singles' ? 4 : 2;
   });
 }
 
@@ -79,9 +67,7 @@ function pickShape(sessionId, shape) {
   update((state) => {
     const session = findSession(sessionId);
     session.shape = shape;
-    const firstGame = GAMES.find((g) => g.shape === shape);
-    session.format = firstGame.id;
-    if (!COURSES_BY_ID[session.courseId].extra) session.points = shape === 'singles' ? 4 : 2;
+    session.format = GAMES.find((g) => g.shape === shape).id;
   });
 }
 
@@ -89,18 +75,25 @@ function pickGame(sessionId, gameId) {
   update((state) => { findSession(sessionId).format = gameId; });
 }
 
-function bumpPoints(sessionId, delta) {
+function toggleCounts(sessionId) {
   update((state) => {
     const session = findSession(sessionId);
-    session.points = Math.max(1, Math.min(8, session.points + delta));
+    session.counts = !sessionCounts(session);
   });
 }
 
-function captainsDraft(sessionId) {
+// Put `playerId` in position `slot` for their team; whoever was there swaps
+// into the vacated position, so every player stays in exactly one slot.
+function setSlot(sessionId, team, slot, playerId) {
   update((state) => {
     const session = findSession(sessionId);
-    session.teamLOrder = shuffled(session.teamLOrder);
-    session.teamTOrder = shuffled(session.teamTOrder);
+    const key = team === 'L' ? 'teamLOrder' : 'teamTOrder';
+    const order = session[key].slice();
+    const from = order.indexOf(playerId);
+    if (from === -1 || from === slot) return;
+    order[from] = order[slot];
+    order[slot] = playerId;
+    session[key] = order;
   });
 }
 
@@ -108,7 +101,7 @@ function lockInSession(sessionId) {
   update((state) => {
     const session = findSession(sessionId);
     const pairings = pairingsFromOrders(session.shape, session.teamLOrder, session.teamTOrder);
-    session.matches = pairings.map((p) => makeMatch(p.sideA, p.sideB));
+    session.matches = pairings.map((p) => makeMatch(p.sideA, p.sideB, null, session.format));
     session.locked = true;
     state.ui.screen = 'rounds';
   });
@@ -221,15 +214,16 @@ function postHoleAndAdvance(matchId) {
 
     const results = computeHoleResults(match, course.holes);
     const nickA = sideShortLabel(state, session, match.sideA), nickB = sideShortLabel(state, session, match.sideB);
-    const label = matchStateLabel(results, course.holes.length, nickA, nickB);
+    const label = matchStateLabel(results, course.holes.length, nickA, nickB, maxPerHole(match.format));
     const shortA = playerNames(match.sideA), shortB = playerNames(match.sideB);
+    const nassau = label.segments.map((s) => `${s.label} ${s.text}`).join(' · ');
     let text;
     if (label.done) {
-      text = `${matchDiff(results) >= 0 ? shortA : shortB} close it out: ${label.text}.`;
+      text = `${shortA} vs ${shortB} is final — ${nassau}.`;
     } else if (label.text === 'All square') {
       text = `${shortA} and ${shortB} are all square through ${results.length}.`;
     } else {
-      text = `${label.text} through ${results.length} — ${shortA} vs ${shortB}.`;
+      text = `${shortA} vs ${shortB}, through ${results.length}: ${nassau}.`;
     }
     state.feed.unshift({ id: uid('fd'), author: 'Hawks Cup', isSystem: true, text, ts: Date.now() });
 

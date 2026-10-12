@@ -1,15 +1,40 @@
 // Pure derived-state math. Nothing here touches the store or the DOM —
-// gross scores + handicaps + hole results are the source of truth
-// everywhere else; this module turns them into net scores, match state,
-// and cup totals on every read.
+// gross scores + handicaps are the source of truth everywhere else; this
+// module turns them into net scores, Nassau status and cup totals on read.
+//
+// Tournament rules encoded here:
+//  - Handicaps are capped at MAX_HCP. 2v2 matches play off 90% of each
+//    handicap (rounded), strokes off the low player in the match. Singles
+//    play the full difference.
+//  - Every match is a Nassau: front nine, back nine, overall — 1 point each,
+//    halves split 0.5/0.5.
+//  - Fourball: best net ball per side wins the hole (±1).
+//    Low ball / high ball: best nets compare and worst nets compare, so a
+//    hole is worth up to ±2.
 
-// Difference-only handicap allocation: the low handicap in this set of
-// players plays off scratch; everyone else gets the gap to the low man.
-function handicapAllocation(playerIds) {
-  const hcps = playerIds.map((id) => PLAYERS_BY_ID[id].hcp);
-  const low = Math.min.apply(null, hcps);
+const MAX_HCP = 28;
+const TEAM_ALLOWANCE = 0.9;
+const BETS_PER_MATCH = 3;
+
+// ---- handicaps --------------------------------------------------------------
+
+function playingHandicaps(playerIds) {
+  const team = playerIds.length > 2;
   const out = {};
-  playerIds.forEach((id) => { out[id] = PLAYERS_BY_ID[id].hcp - low; });
+  playerIds.forEach((id) => {
+    const h = Math.min(PLAYERS_BY_ID[id].hcp, MAX_HCP);
+    out[id] = team ? Math.round(h * TEAM_ALLOWANCE) : h;
+  });
+  return out;
+}
+
+// Strokes each player receives: their playing handicap minus the lowest in
+// the match (the low player plays off scratch).
+function handicapAllocation(playerIds) {
+  const eff = playingHandicaps(playerIds);
+  const low = Math.min.apply(null, playerIds.map((id) => eff[id]));
+  const out = {};
+  playerIds.forEach((id) => { out[id] = eff[id] - low; });
   return out;
 }
 
@@ -26,30 +51,43 @@ function netScore(gross, strokesReceived, si) {
   return gross - shotsOnHole(strokesReceived, si);
 }
 
-// Best net score for a side on one hole (a side of one is just that score —
-// this is what makes the same function work for singles and team matches).
-function sideNetOnHole(match, side, hole, grossByPlayer) {
-  const ids = side === 'A' ? match.sideA : match.sideB;
-  const strokes = handicapAllocation(match.sideA.concat(match.sideB));
-  return Math.min.apply(null, ids.map((id) => {
-    const g = (grossByPlayer[id] && grossByPlayer[id][hole.n]) || hole.par;
-    return netScore(g, strokes[id], hole.si);
-  }));
+// ---- single hole -------------------------------------------------------------
+
+function maxPerHole(format) { return format === 'lowhigh' ? 2 : 1; }
+
+const sign = (n) => (n > 0 ? 1 : n < 0 ? -1 : 0);
+
+// Net scores and the result of one hole for a match. `gross` maps
+// playerId -> that player's gross strokes on this hole. Positive result =
+// side A ahead, negative = side B.
+function holeBreakdown(match, hole, gross) {
+  const ids = match.sideA.concat(match.sideB);
+  const strokes = handicapAllocation(ids);
+  const nets = {};
+  ids.forEach((id) => {
+    const g = gross[id] != null ? gross[id] : hole.par;
+    nets[id] = netScore(g, strokes[id], hole.si);
+  });
+  const a = match.sideA.map((id) => nets[id]);
+  const b = match.sideB.map((id) => nets[id]);
+  const lowA = Math.min.apply(null, a), lowB = Math.min.apply(null, b);
+  const highA = Math.max.apply(null, a), highB = Math.max.apply(null, b);
+  const low = sign(lowB - lowA);
+  const high = sign(highB - highA);
+  const result = match.format === 'lowhigh' ? low + high : low;
+  return { nets, lowA, lowB, highA, highB, low, high, result };
 }
 
-// Recomputes the -1/0/1 result for every hole already played (grossScores
-// has an entry for that hole), from raw gross scores. This is what lets us
-// treat gross + handicaps as the only source of truth.
+// Result (see above) for every hole already played: all players have a
+// committed gross for the hole. Stops at the first hole not yet entered.
 function computeHoleResults(match, holes) {
+  const ids = match.sideA.concat(match.sideB);
   const results = [];
   for (const hole of holes) {
-    const allEntered = match.sideA.concat(match.sideB).every(
-      (id) => match.grossScores[id] && match.grossScores[id][hole.n] != null
-    );
-    if (!allEntered) break;
-    const netA = sideNetOnHole(match, 'A', hole, match.grossScores);
-    const netB = sideNetOnHole(match, 'B', hole, match.grossScores);
-    results.push(netA < netB ? 1 : netA > netB ? -1 : 0);
+    if (!ids.every((id) => match.grossScores[id] && match.grossScores[id][hole.n] != null)) break;
+    const gross = {};
+    ids.forEach((id) => { gross[id] = match.grossScores[id][hole.n]; });
+    results.push(holeBreakdown(match, hole, gross).result);
   }
   return results;
 }
@@ -58,97 +96,140 @@ function matchDiff(holeResults) {
   return holeResults.reduce((a, b) => a + b, 0);
 }
 
-// Live/final state label + color for a match, given its hole results so far.
-function matchStateLabel(holeResults, totalHoles, sideAShort, sideBShort) {
-  const thru = holeResults.length;
-  const diff = matchDiff(holeResults);
-  const remaining = totalHoles - thru;
-  const margin = Math.abs(diff);
-  const decided = margin > remaining && remaining > 0;
+// ---- Nassau ---------------------------------------------------------------------
 
-  if (thru === 0) return { text: 'Not started', color: 'rgba(32,30,29,.5)', done: false };
-  if (decided) {
-    const leader = diff > 0 ? sideAShort : sideBShort;
-    return { text: `${leader} ${margin} & ${remaining}`, color: diff > 0 ? RED : INK, done: true };
-  }
-  if (thru === totalHoles) {
-    if (diff === 0) return { text: 'Halved', color: INK, done: true };
-    const leader = diff > 0 ? sideAShort : sideBShort;
-    return { text: `${leader} ${margin} UP`, color: diff > 0 ? RED : INK, done: true };
-  }
-  if (diff === 0) return { text: 'All square', color: INK, done: false };
-  const leader = diff > 0 ? sideAShort : sideBShort;
-  return { text: `${leader} ${margin} UP`, color: diff > 0 ? RED : INK, done: false };
+function nassauSegments(totalHoles) {
+  const half = Math.ceil(totalHoles / 2);
+  return [
+    { key: 'front', label: 'Front', from: 0, to: half },
+    { key: 'back', label: 'Back', from: half, to: totalHoles },
+    { key: 'total', label: 'Total', from: 0, to: totalHoles },
+  ];
 }
 
-// Fractional points a match currently contributes to each side: 1 share for
-// a win, half each for a halve, split proportionally by team if still live
-// (so the Trophy screen's "projected" total has something to show).
-function matchPointShares(holeResults, totalHoles) {
-  const diff = matchDiff(holeResults);
-  const thru = holeResults.length;
-  const remaining = totalHoles - thru;
-  const margin = Math.abs(diff);
-  const decided = margin > remaining && remaining > 0;
-  const final = decided || thru === totalHoles;
-  if (final) {
-    if (diff === 0) return { a: 0.5, b: 0.5, final: true };
-    return diff > 0 ? { a: 1, b: 0, final: true } : { a: 0, b: 1, final: true };
-  }
-  // live projection: whoever is currently up gets the full share, split on square
-  if (diff === 0) return { a: 0.5, b: 0.5, final: false };
-  return diff > 0 ? { a: 1, b: 0, final: false } : { a: 0, b: 1, final: false };
+// A bet is settled once the segment is complete or the lead can no longer be
+// caught (lead > holes left × the most a hole can swing).
+function segmentState(results, seg, maxPer) {
+  const slice = results.slice(seg.from, seg.to);
+  const len = seg.to - seg.from;
+  const played = slice.length;
+  const diff = matchDiff(slice);
+  const remaining = len - played;
+  const final = played > 0 && (remaining === 0 || Math.abs(diff) > remaining * maxPer);
+  return { diff, played, len, remaining, final, started: played > 0 };
 }
+
+// Points a bet is worth to each side right now. Unstarted bets are worth
+// nothing yet; live ones are projected to whoever leads (split when square).
+function segmentShare(st) {
+  if (!st.started) return { a: 0, b: 0, final: false };
+  if (st.diff > 0) return { a: 1, b: 0, final: st.final };
+  if (st.diff < 0) return { a: 0, b: 1, final: st.final };
+  return { a: 0.5, b: 0.5, final: st.final };
+}
+
+const MUTED_INK = 'rgba(32,30,29,.5)';
+
+function segmentText(st, nickA, nickB) {
+  if (!st.started) return '—';
+  if (st.diff === 0) return st.final ? 'Halved' : 'All square';
+  const leader = st.diff > 0 ? nickA : nickB;
+  const m = Math.abs(st.diff);
+  return st.final && st.remaining > 0 ? `${leader} ${m}&${st.remaining}` : `${leader} ${m} UP`;
+}
+
+// Full Nassau picture for a match.
+function nassauStatus(holeResults, totalHoles, nickA, nickB, maxPer) {
+  const segments = nassauSegments(totalHoles).map((seg) => {
+    const st = segmentState(holeResults, seg, maxPer || 1);
+    return Object.assign({ key: seg.key, label: seg.label }, st, {
+      text: segmentText(st, nickA, nickB),
+      color: !st.started ? MUTED_INK : st.diff > 0 ? RED : INK,
+      share: segmentShare(st),
+    });
+  });
+  return segments;
+}
+
+// Headline state for a match (its overall bet), plus whether every bet is
+// settled. `done` therefore means the whole Nassau is decided.
+function matchStateLabel(holeResults, totalHoles, sideAShort, sideBShort, maxPer) {
+  const segments = nassauStatus(holeResults, totalHoles, sideAShort, sideBShort, maxPer);
+  const total = segments[2];
+  const done = segments.every((s) => s.final);
+  if (!total.started) return { text: 'Not started', color: MUTED_INK, done: false, segments };
+  return { text: total.text, color: total.color, done, segments };
+}
+
+// Points each side holds across the match's three bets.
+function matchPointShares(holeResults, totalHoles, maxPer) {
+  const segments = nassauStatus(holeResults, totalHoles, 'A', 'B', maxPer);
+  let a = 0, b = 0, settledA = 0, settledB = 0;
+  segments.forEach((s) => {
+    a += s.share.a; b += s.share.b;
+    if (s.share.final) { settledA += s.share.a; settledB += s.share.b; }
+  });
+  return { a, b, settledA, settledB, final: segments.every((s) => s.final), segments };
+}
+
+// ---- sessions ---------------------------------------------------------------------
 
 function courseFor(session) { return COURSES_BY_ID[session.courseId]; }
 
-function sessionStatus(session) {
-  if (session.courseId && COURSES_BY_ID[session.courseId].extra) return 'extra';
-  if (!session.locked || session.matches.length === 0) return 'not-set';
-  const course = courseFor(session);
-  const allFinal = session.matches.every((m) => {
-    const results = computeHoleResults(m, course.holes);
-    return matchStateLabel(results, course.holes.length, 'A', 'B').done;
-  });
-  return allFinal ? 'final' : 'in-play';
+// Does this round count toward the team event? Old saved trips without the
+// flag fall back to "everything except the extra course".
+function sessionCounts(session) {
+  return session.counts !== undefined ? !!session.counts : !courseFor(session).extra;
 }
 
-// Points earned by each team from one session, split evenly across its
-// matches (e.g. 2 points / 2 matches = 1 point per match).
-function sessionPoints(session) {
+function plannedMatches(session) {
+  return session.matches.length || (session.shape === 'singles' ? 4 : 2);
+}
+
+// Team-event points on offer in a session: one per Nassau bet.
+function sessionPointValue(session) {
+  return sessionCounts(session) ? plannedMatches(session) * BETS_PER_MATCH : 0;
+}
+
+function matchResults(match, course) { return computeHoleResults(match, course.holes); }
+
+function sessionStatus(session) {
+  if (!session.locked || session.matches.length === 0) return 'not-set';
   const course = courseFor(session);
-  if (!course || course.extra || session.points === 0 || session.matches.length === 0) {
+  const allDone = session.matches.every((m) =>
+    matchStateLabel(matchResults(m, course), course.holes.length, 'A', 'B', maxPerHole(m.format)).done);
+  return allDone ? 'final' : 'in-play';
+}
+
+// Points the two teams hold from one session (live bets projected).
+function sessionPoints(session) {
+  if (!sessionCounts(session) || session.matches.length === 0) {
     return { team1: 0, team2: 0, final: session.matches.length > 0 };
   }
-  const perMatch = session.points / session.matches.length;
+  const course = courseFor(session);
   let team1 = 0, team2 = 0, allFinal = true;
   session.matches.forEach((m) => {
-    const results = computeHoleResults(m, course.holes);
-    const shares = matchPointShares(results, course.holes.length);
-    team1 += shares.a * perMatch;
-    team2 += shares.b * perMatch;
-    if (!shares.final) allFinal = false;
+    const s = matchPointShares(matchResults(m, course), course.holes.length, maxPerHole(m.format));
+    team1 += s.a; team2 += s.b;
+    if (!s.final) allFinal = false;
   });
   return { team1, team2, final: allFinal };
 }
 
 function cupTotals(sessions) {
-  let team1 = 0, team2 = 0, settled = 0;
+  let team1 = 0, team2 = 0, settled = 0, available = 0;
   sessions.forEach((s) => {
-    const pts = sessionPoints(s);
-    team1 += pts.team1; team2 += pts.team2;
-    if (pts.final) settled += (s.points || 0);
-    else if (s.matches.length) {
-      // partially played session: count only the decided matches toward "settled"
-      const course = courseFor(s);
-      const perMatch = s.points / s.matches.length;
-      s.matches.forEach((m) => {
-        const results = computeHoleResults(m, course.holes);
-        if (matchPointShares(results, course.holes.length).final) settled += perMatch;
-      });
-    }
+    available += sessionPointValue(s);
+    if (!sessionCounts(s)) return;
+    const course = courseFor(s);
+    s.matches.forEach((m) => {
+      const sh = matchPointShares(matchResults(m, course), course.holes.length, maxPerHole(m.format));
+      team1 += sh.a; team2 += sh.b;
+      settled += sh.settledA + sh.settledB;
+    });
   });
-  return { team1, team2, settled };
+  // Win line: more than half of the points on offer (24 -> 12.5).
+  return { team1, team2, settled, available, toWin: available / 2 + 0.5 };
 }
 
 function fmtPoints(n) {

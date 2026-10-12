@@ -25,8 +25,8 @@ function applyHandicaps(state) {
   });
 }
 
-function makeMatch(sideA, sideB, id) {
-  return { id: id || uid('match'), sideA, sideB, grossScores: {}, scorer: sideA[0], holeTags: {} };
+function makeMatch(sideA, sideB, id, format) {
+  return { id: id || uid('match'), sideA, sideB, format: format || 'fourball', grossScores: {}, scorer: sideA[0], holeTags: {} };
 }
 
 // Bakes a fixed sequence of hole results (-1/0/1) into a match's gross
@@ -37,12 +37,18 @@ function seedResultsIntoMatch(match, course, results) {
   const strokes = handicapAllocation(ids);
   match.grossScores = {};
   ids.forEach((id) => { match.grossScores[id] = {}; });
+  // How many of a side's players beat par net on this hole to produce a
+  // result of |r|: fourball/singles only ever need the first player; in low
+  // ball / high ball a result of 2 needs both (low and high ball both won)
+  // and 1 needs just the better ball.
+  const betterCount = (r) => (match.format === 'lowhigh' ? Math.abs(r) : Math.sign(Math.abs(r)));
   results.forEach((r, i) => {
     const hole = course.holes[i];
-    const netA = r === 1 ? hole.par - 1 : hole.par;
-    const netB = r === -1 ? hole.par - 1 : hole.par;
-    match.sideA.forEach((id) => { match.grossScores[id][hole.n] = netA + shotsOnHole(strokes[id], hole.si); });
-    match.sideB.forEach((id) => { match.grossScores[id][hole.n] = netB + shotsOnHole(strokes[id], hole.si); });
+    const n = betterCount(r);
+    const netFor = (side, wins) => (id) => (wins && side.indexOf(id) < n ? hole.par - 1 : hole.par);
+    const aNet = netFor(match.sideA, r > 0), bNet = netFor(match.sideB, r < 0);
+    match.sideA.forEach((id) => { match.grossScores[id][hole.n] = aNet(id) + shotsOnHole(strokes[id], hole.si); });
+    match.sideB.forEach((id) => { match.grossScores[id][hole.n] = bNet(id) + shotsOnHole(strokes[id], hole.si); });
   });
 }
 
@@ -51,14 +57,16 @@ function seedResultsIntoMatch(match, course, results) {
 function buildSessions() {
   const teamL = PLAYERS.filter((p) => p.team === 'L').map((p) => p.id);
   const teamT = PLAYERS.filter((p) => p.team === 'T').map((p) => p.id);
-  // The 2026 trip, in playing order: the Matchbox warm-up (no cup points) on
-  // Thursday, then four sessions worth 12 points (2 + 2 + 4 + 4).
+  // The 2026 trip, in playing order. Every match is a Nassau (3 points).
+  // Team event = Southern Pines fourball (2 matches) + Mid Pines low/high
+  // ball (2) + Pine Needles singles (4) = 8 matches x 3 = 24 points, 12.5
+  // wins. The Matchbox and Tobacco Road are played but don't count.
   const cfg = [
-    { id: 'sx', n: '+', day: 'Thu 11/5', courseId: 'the-matchbox', format: 'scramble', shape: 'team', points: 0, tee: 'Tee time TBD' },
-    { id: 's1', n: 1, day: 'Fri 11/6 AM', courseId: 'southern-pines', format: 'fourball', shape: 'team', points: 2, tee: 'Tee time TBD' },
-    { id: 's2', n: 2, day: 'Fri 11/6 PM', courseId: 'mid-pines', format: 'fourball', shape: 'team', points: 2, tee: 'Tee time TBD' },
-    { id: 's3', n: 3, day: 'Sat 11/7', courseId: 'pine-needles', format: 'netsingles', shape: 'singles', points: 4, tee: 'Tee time TBD' },
-    { id: 's4', n: 4, day: 'Sun 11/8', courseId: 'tobacco-road', format: 'singles', shape: 'singles', points: 4, tee: 'Tee time TBD' },
+    { id: 'sx', n: '+', day: 'Thu 11/5', courseId: 'the-matchbox', format: 'fourball', shape: 'team', counts: false, tee: 'Tee time TBD' },
+    { id: 's1', n: 1, day: 'Fri 11/6 AM', courseId: 'southern-pines', format: 'fourball', shape: 'team', counts: true, tee: 'Tee time TBD' },
+    { id: 's2', n: 2, day: 'Fri 11/6 PM', courseId: 'mid-pines', format: 'lowhigh', shape: 'team', counts: true, tee: 'Tee time TBD' },
+    { id: 's3', n: 3, day: 'Sat 11/7', courseId: 'pine-needles', format: 'singles', shape: 'singles', counts: true, tee: 'Tee time TBD' },
+    { id: 's4', n: 4, day: 'Sun 11/8', courseId: 'tobacco-road', format: 'singles', shape: 'singles', counts: false, tee: 'Tee time TBD' },
   ];
   return cfg.map((c) => Object.assign({}, c, {
     locked: false, matches: [], teamLOrder: teamL.slice(), teamTOrder: teamT.slice(),
@@ -81,23 +89,27 @@ function seedState(ui) {
   const s1 = state.sessions.find((s) => s.id === 's1');
   const s2 = state.sessions.find((s) => s.id === 's2');
 
+  // Session 1 (Southern Pines, fourball): finished.
   s1.locked = true;
   s1.matches = [
-    makeMatch(['david', 'lenny'], ['tom', 'ben'], 'm1a'),
-    makeMatch(['alex', 'dan'], ['ryan', 'jamey'], 'm1b'),
+    makeMatch(['david', 'lenny'], ['tom', 'ben'], 'm1a', 'fourball'),
+    makeMatch(['alex', 'dan'], ['ryan', 'jamey'], 'm1b', 'fourball'),
   ];
-  seedResultsIntoMatch(s1.matches[0], COURSES_BY_ID[s1.courseId],
-    [1, 0, 1, 0, 1, 0, -1, 0, 1, 0, 0, -1, 0, 1, 0, 0]); // decided 3&2
-  seedResultsIntoMatch(s1.matches[1], COURSES_BY_ID[s1.courseId],
-    [1, -1, 0, 1, -1, 0, 0, 1, -1, 0, 0, 1, -1, 0, 0, 1, -1, 0]); // halved thru 18
+  const s1Course = COURSES_BY_ID[s1.courseId];
+  seedResultsIntoMatch(s1.matches[0], s1Course, [1, 0, 1, 0, 1, 0, -1, 0, 1, 0, 0, -1, 0, 1, 0, 0, 1, 0]); // LAWDs sweep all 3 bets
+  seedResultsIntoMatch(s1.matches[1], s1Course, [-1, 0, 0, 1, 0, 0, -1, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0]); // Turkeys take front + total, back halved
 
+  // Session 2 (Mid Pines, low ball / high ball): live, 12 holes in. A hole
+  // can be worth 2 here, so the first match has a +2 hole.
   s2.locked = true;
+  s2.teamLOrder = ['david', 'dan', 'lenny', 'alex'];
+  s2.teamTOrder = ['tom', 'jamey', 'ben', 'ryan'];
   s2.matches = [
-    makeMatch(['david', 'dan'], ['tom', 'jamey'], 'm2a'),
-    makeMatch(['lenny', 'alex'], ['ben', 'ryan'], 'm2b'),
+    makeMatch(['david', 'dan'], ['tom', 'jamey'], 'm2a', 'lowhigh'),
+    makeMatch(['lenny', 'alex'], ['ben', 'ryan'], 'm2b', 'lowhigh'),
   ];
   seedResultsIntoMatch(s2.matches[0], COURSES_BY_ID[s2.courseId],
-    [0, 1, 0, -1, 1, 0, 0, 1, 0, 0, 0, 0]); // thru 12, 2 up
+    [0, 2, 0, -1, 1, 0, 0, 1, 0, 0, 0, 0]); // thru 12, front won 3 up
   seedResultsIntoMatch(s2.matches[1], COURSES_BY_ID[s2.courseId],
     [-1, 0, 0, 1, 0, 0, -1, 0, 0, -1, 1, 0]); // thru 12, 1 down
 

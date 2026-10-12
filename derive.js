@@ -35,7 +35,7 @@ function allMatches(state) {
     const course = courseFor(session);
     session.matches.forEach((match) => {
       const results = computeHoleResults(match, course.holes);
-      const label = matchStateLabel(results, course.holes.length, 'A', 'B');
+      const label = matchStateLabel(results, course.holes.length, 'A', 'B', maxPerHole(match.format));
       out.push({ session, course, match, results, label });
     });
   });
@@ -60,15 +60,15 @@ function playerRecord(state, playerId) {
 function computeAwards(state) {
   const totals = ledgerTotals(state);
 
-  // Player of the trip: most personal match-points earned (win=1, halve=0.5)
+  // Player of the trip: most Nassau points won for the team (settled bets
+  // only, team-event rounds only; each bet is 1 point, halves 0.5)
   const points = {};
   PLAYERS.forEach((p) => { points[p.id] = 0; });
-  allMatches(state).forEach(({ match, results, label }) => {
-    if (!label.done) return;
-    const diff = matchDiff(results);
-    const share = diff === 0 ? 0.5 : 1;
-    if (diff >= 0) match.sideA.forEach((id) => { points[id] += diff === 0 ? share : share; });
-    if (diff <= 0) match.sideB.forEach((id) => { points[id] += diff === 0 ? share : share; });
+  allMatches(state).forEach(({ session, course, match, results }) => {
+    if (!sessionCounts(session)) return;
+    const sh = matchPointShares(results, course.holes.length, maxPerHole(match.format));
+    match.sideA.forEach((id) => { points[id] += sh.settledA; });
+    match.sideB.forEach((id) => { points[id] += sh.settledB; });
   });
   const potPlayer = PLAYERS.slice().sort((a, b) => points[b.id] - points[a.id])[0];
 
@@ -131,23 +131,20 @@ function computeAwards(state) {
 
 function trophyProjection(state) {
   const totals = cupTotals(state.sessions);
-  const cupSessions = state.sessions.filter((s) => !courseFor(s).extra);
+  const cupSessions = state.sessions.filter((s) => sessionCounts(s));
   const liveSession = cupSessions.find((s) => sessionStatus(s) === 'in-play');
   const notSet = cupSessions.filter((s) => sessionStatus(s) === 'not-set');
-  const remainingPts = cupSessions.reduce((sum, s) => {
-    const st = sessionStatus(s);
-    return st === 'final' ? sum : sum + s.points;
-  }, 0);
+  const remainingPts = totals.available - totals.settled;
   let note;
-  if (remainingPts === 0) {
-    note = 'All twelve points are on the board.';
+  if (remainingPts <= 0) {
+    note = `All ${fmtPoints(totals.available)} points are on the board.`;
   } else if (liveSession) {
-    note = `Based on current match states. ${courseFor(liveSession).name} still has points live — a swing there can still move the total.`;
+    note = `Based on current match states. ${courseFor(liveSession).name} still has points live — ${fmtPoints(totals.toWin)} wins the cup.`;
   } else if (notSet.length) {
     const names = notSet.map((s) => courseFor(s).name).join(' and ');
-    note = `${names} ${notSet.length > 1 ? 'are' : 'is'} still to be decided — ${remainingPts} points on the table.`;
+    note = `${names} ${notSet.length > 1 ? 'are' : 'is'} still to be played — ${fmtPoints(remainingPts)} of ${fmtPoints(totals.available)} points on the table, ${fmtPoints(totals.toWin)} wins the cup.`;
   } else {
-    note = `${remainingPts} points still to be decided.`;
+    note = `${fmtPoints(remainingPts)} points still to be decided.`;
   }
   return { totals, note };
 }
