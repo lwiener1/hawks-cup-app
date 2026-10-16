@@ -62,6 +62,21 @@ document.addEventListener('click', (ev) => {
       setHandicap(a.player, Math.round(value * 10) / 10);
       break;
     }
+    case 'open-verify': openVerify(a.session); break;
+    case 'view-photo': viewPhoto(a.photo); break;
+    case 'close-photo': closePhoto(); break;
+    case 'photo-zoom': zoomPhoto(Number(a.delta)); break;
+    case 'remove-photo':
+      if (confirm('Delete this scorecard photo for everyone?')) removePhoto(a.photo);
+      break;
+    case 'fix-hole': fixHole(a.match, Number(a.idx)); break;
+    case 'mark-verified': {
+      if (photosFor(getState(), a.session).length === 0 &&
+          !confirm('No scorecard photo has been added for this round. Mark the scores as verified anyway?')) break;
+      markVerified(a.session);
+      break;
+    }
+    case 'clear-verified': clearVerified(a.session); break;
     case 'forget-me': forgetMe(); break;
     case 'share-invite': {
       const link = inviteLink();
@@ -83,6 +98,13 @@ document.addEventListener('click', (ev) => {
 
 // <select> pickers fire `change`, not `click`.
 document.addEventListener('change', (ev) => {
+  const file = ev.target.closest('input[type="file"][data-action="photo-file"]');
+  if (file) {
+    const files = Array.from(file.files || []);
+    file.value = '';
+    addPhotos(file.dataset.session, files);
+    return;
+  }
   const el = ev.target.closest('select[data-action]');
   if (!el) return;
   if (el.dataset.action === 'set-slot') setSlot(el.dataset.session, el.dataset.team, Number(el.dataset.slot), el.value);

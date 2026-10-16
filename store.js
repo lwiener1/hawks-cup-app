@@ -13,6 +13,7 @@ function defaultUi() {
   return {
     screen: 'cup', moneyTab: 'games', setupSessionId: 's3', cardMatchId: null,
     finesOpen: false, drafts: {}, me: null, tripCode: null, hcpEditPlayer: null,
+    verifySessionId: null, viewPhotoId: null, photoZoom: 1, cardFrom: 'rounds',
   };
 }
 
@@ -92,7 +93,7 @@ function buildSessions() {
 function freshState(ui) {
   return {
     teamOneName: TEAM_ONE_NAME, teamTwoName: TEAM_TWO_NAME,
-    sessions: buildSessions(), ledger: [], sideGameEvents: [], feed: [], handicaps: {},
+    sessions: buildSessions(), ledger: [], sideGameEvents: [], feed: [], handicaps: {}, photos: [],
     ui: ui || defaultUi(),
   };
 }
@@ -178,6 +179,7 @@ function flattenState(state) {
   state.feed.forEach((e) => { out['feed_' + e.id] = e; });
   state.sideGameEvents.forEach((e) => { out['sge_' + e.id] = e; });
   Object.keys(state.handicaps || {}).forEach((id) => { out['hcp_' + id] = { id, hcp: state.handicaps[id] }; });
+  (state.photos || []).forEach((p) => { out['photo_' + p.id] = p; });
   return JSON.parse(JSON.stringify(out));
 }
 
@@ -185,10 +187,11 @@ function assembleState(docs, ui) {
   const meta = docs.meta || {};
   const sessions = [];
   const matchesBySession = {};
-  const ledger = [], feed = [], sideGameEvents = [], handicaps = {};
+  const ledger = [], feed = [], sideGameEvents = [], handicaps = {}, photos = [];
   Object.keys(docs).forEach((key) => {
     const d = docs[key];
-    if (key.indexOf('hcp_') === 0) handicaps[d.id] = d.hcp;
+    if (key.indexOf('photo_') === 0) photos.push(d);
+    else if (key.indexOf('hcp_') === 0) handicaps[d.id] = d.hcp;
     else if (key.indexOf('session_') === 0) sessions.push(d);
     else if (key.indexOf('match_') === 0) (matchesBySession[d.sessionId] = matchesBySession[d.sessionId] || []).push(d);
     else if (key.indexOf('ledger_') === 0) ledger.push(d);
@@ -209,7 +212,7 @@ function assembleState(docs, ui) {
   return {
     teamOneName: TEAM_ONE_NAME,
     teamTwoName: TEAM_TWO_NAME,
-    sessions, ledger, sideGameEvents, feed, handicaps, ui,
+    sessions, ledger, sideGameEvents, feed, handicaps, photos: photos.sort((a, b) => a.ts - b.ts), ui,
   };
 }
 
@@ -225,6 +228,7 @@ function loadState() {
     if (!parsed || !Array.isArray(parsed.sessions)) return null;
     parsed.ui = Object.assign(defaultUi(), parsed.ui);
     parsed.handicaps = parsed.handicaps || {};
+    parsed.photos = parsed.photos || [];
     return parsed;
   } catch (e) {
     console.warn('Could not read saved state, starting fresh.', e);

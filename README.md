@@ -20,18 +20,30 @@ Firestore rules (production mode):
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /trips/{tripId}/docs/{docId} {
+    match /trips/{tripId}/{document=**} {
       allow read, write: if true;
     }
   }
 }
 ```
 
+(The wider `{document=**}` path is what lets scorecard photos share between
+phones. Without it everything else still works, and photos stay on the phone
+that took them.)
+
 There are no logins. The **trip code** is the only gate: data lives under
 `trips/<code>/`, and nothing outside that path is readable. Pick a code that
 isn't guessable, and only share the invite link with the group.
 
 Without a Firebase config the app still works, saving on that phone only.
+
+## Scorecard photos
+
+Rounds > **Scorecards & verify**: add photos of the paper cards, compare them
+with the scores in the app (tap any score to fix it), then mark the round
+verified. The stamp goes stale if a score changes afterwards. Photos are
+shrunk on the phone (`photos.js`); only a tiny thumbnail rides along with the
+normal sync, and the full image is fetched when someone opens it.
 
 ## How sync works
 

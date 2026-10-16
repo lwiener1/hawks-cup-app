@@ -13,6 +13,11 @@ const TABS = [
 
 function headerInfo(state) {
   const screen = state.ui.screen;
+  if (screen === 'verify') {
+    const session = findSession(state.ui.verifySessionId);
+    const n = photosFor(state, session.id).length;
+    return { kicker: 'Verify scores', title: courseFor(session).name, right: `${n} photo${n === 1 ? '' : 's'}` };
+  }
   if (screen === 'setup') {
     const session = findSession(state.ui.setupSessionId);
     return { kicker: `Session ${session.n}`, title: 'Set the game', right: 'Anyone can edit' };
@@ -46,7 +51,7 @@ function moneyMovedLabel(state) {
 
 function renderHeader(state) {
   const info = headerInfo(state);
-  const showBack = state.ui.screen === 'card' || state.ui.screen === 'setup' || state.ui.screen === 'trophy';
+  const showBack = ['card', 'setup', 'trophy', 'verify'].includes(state.ui.screen);
   return `
   <div style="flex:none;padding:env(safe-area-inset-top,20px) 18px 10px;border-bottom:2px solid var(--rule);display:flex;align-items:flex-end;gap:10px;background:var(--bg)">
     <button data-action="go-back" style="display:${showBack ? 'flex' : 'none'};align-items:center;justify-content:center;width:26px;height:26px;padding:0;margin-bottom:2px;border:1px solid var(--rule);background:transparent;color:var(--ink);font-size:14px;line-height:1">&larr;</button>
@@ -67,20 +72,20 @@ function renderTabBar(state) {
   return `
   <div style="flex:none;display:flex;background:var(--rule);gap:1px;border-top:2px solid var(--rule);padding-bottom:env(safe-area-inset-bottom,14px)">
     ${TABS.map((t) => `
-      <button data-action="go-screen" data-screen="${t.id}" style="flex:1;border:0;background:${screen === t.id ? 'var(--ink)' : 'var(--bg)'};color:${screen === t.id ? 'var(--bg)' : 'rgba(32,30,29,.75)'};font-weight:800;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;padding:12px 2px 10px">${t.name}</button>
+      <button data-action="go-screen" data-screen="${t.id}" style="flex:1;border:0;background:${screen === t.id ? 'var(--ink)' : 'var(--bg)'};color:${screen === t.id ? 'var(--bg)' : 'rgba(10,16,48,.75)'};font-weight:800;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;padding:12px 2px 10px">${t.name}</button>
     `).join('')}
   </div>`;
 }
 
 function holeFill(r) {
-  return r > 0 ? 'var(--accent)' : r < 0 ? 'var(--ink)' : 'var(--rule-soft)';
+  return r > 0 ? 'var(--accent)' : r < 0 ? 'var(--team2)' : 'var(--rule-soft)';
 }
 
 // "Front LAWDs 2 UP · Back — · Total LAWDs 1 UP", one chip per Nassau bet.
 function nassauChips(segments) {
   return `<div style="display:flex;gap:1px;background:var(--rule);border:1px solid var(--rule);margin-top:9px">${segments.map((s) => `
     <div style="flex:1;min-width:0;background:var(--bg);padding:5px 6px">
-      <div style="font-size:8px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:rgba(32,30,29,.45)">${s.label}${s.final ? ' &middot; final' : ''}</div>
+      <div style="font-size:8px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:rgba(10,16,48,.45)">${s.label}${s.final ? ' &middot; final' : ''}</div>
       <div style="font-size:11px;font-weight:800;color:${s.color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.text)}</div>
     </div>`).join('')}</div>`;
 }
@@ -109,7 +114,7 @@ function renderCup(state) {
         <div style="font-size:13px;font-weight:800;color:${lbl.color};white-space:nowrap">${esc(lbl.text)}</div>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:3px">
-        <div style="font-size:14px;font-weight:800;letter-spacing:-.01em;color:rgba(32,30,29,.75)">${esc(shortB)}</div>
+        <div style="font-size:14px;font-weight:800;letter-spacing:-.01em;color:rgba(10,16,48,.75)">${esc(shortB)}</div>
         <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">thru ${results.length}</div>
       </div>
       ${holeStrip(results, course.holes.length)}
@@ -131,7 +136,7 @@ function renderCup(state) {
     const fmt = `${game.name} · ${counts ? sessionPointValue(session) + ' pts' : 'no team pts'}`;
     return `
     <button data-action="${status === 'not-set' ? 'open-setup' : 'open-rounds'}" data-session="${session.id}" style="display:flex;width:100%;gap:12px;align-items:center;text-align:left;border:0;border-top:1px solid var(--rule);background:${idx % 2 ? 'var(--row-alt)' : 'transparent'};padding:11px 18px">
-      <div style="font-size:11px;font-weight:800;color:rgba(32,30,29,.35);width:14px">${session.n}</div>
+      <div style="font-size:11px;font-weight:800;color:rgba(10,16,48,.35);width:14px">${session.n}</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:14px;font-weight:800;letter-spacing:-.01em">${esc(course.name)}</div>
         <div style="font-size:11px;color:var(--muted)">${esc(fmt)}</div>
@@ -150,16 +155,16 @@ function renderCup(state) {
         <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:2px">${esc(state.teamOneName)}</div>
         <div style="font-size:62px;font-weight:800;line-height:.9;letter-spacing:-.04em;color:var(--accent)">${fmtPoints(totals.team1)}</div>
       </div>
-      <div style="font-size:11px;font-weight:800;letter-spacing:.1em;color:rgba(32,30,29,.35);padding:0 6px">V</div>
+      <div style="font-size:11px;font-weight:800;letter-spacing:.1em;color:rgba(10,16,48,.35);padding:0 6px">V</div>
       <div style="text-align:right">
         <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:2px">${esc(state.teamTwoName)}</div>
-        <div style="font-size:62px;font-weight:800;line-height:.9;letter-spacing:-.04em">${fmtPoints(totals.team2)}</div>
+        <div style="font-size:62px;font-weight:800;line-height:.9;letter-spacing:-.04em;color:var(--team2)">${fmtPoints(totals.team2)}</div>
       </div>
     </div>
     <div style="display:flex;height:8px;border-bottom:2px solid var(--rule)">
       <div style="width:${pct(totals.team1)};background:var(--accent)"></div>
       <div style="width:${pct(Math.max(0, totals.available - totals.team1 - totals.team2))};background:var(--rule-soft)"></div>
-      <div style="width:${pct(totals.team2)};background:var(--ink)"></div>
+      <div style="width:${pct(totals.team2)};background:var(--team2)"></div>
     </div>
     <div style="display:flex;justify-content:space-between;padding:7px 18px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-bottom:2px solid var(--rule)">
       <span>${fmtPoints(totals.settled)} of ${fmtPoints(totals.available)} settled</span><span>${fmtPoints(totals.toWin)} wins the cup</span>
@@ -196,7 +201,7 @@ function renderRounds(state) {
         <div style="display:flex;gap:10px;align-items:center;border-top:1px solid var(--rule);padding:9px 0">
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;font-weight:800">${esc(playerNames(m.sideA))}</div>
-            <div style="font-size:13px;font-weight:800;color:rgba(32,30,29,.7)">${esc(playerNames(m.sideB))}</div>
+            <div style="font-size:13px;font-weight:800;color:rgba(10,16,48,.7)">${esc(playerNames(m.sideB))}</div>
           </div>
           <div style="font-size:12px;font-weight:800;color:${label.color};text-align:right;white-space:nowrap">${esc(label.text)}${(label.done || results.length === 0) ? '' : ` · ${results.length}`}</div>
           <button data-action="open-card" data-match="${m.id}" style="display:${showScore ? 'inline-block' : 'none'};border:1px solid var(--accent);background:transparent;color:var(--accent);font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:6px 9px">Score</button>
@@ -214,9 +219,128 @@ function renderRounds(state) {
       <div style="font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.1;margin:2px 0 1px">${esc(course.name)}</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${esc(fmtLine)}</div>
       ${matchRows}
-      <button data-action="open-setup" data-session="${session.id}" style="margin-top:8px;border:1px solid var(--rule);background:transparent;font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:7px 10px;color:var(--ink)">Edit format &amp; pairings</button>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+        <button data-action="open-setup" data-session="${session.id}" style="border:1px solid var(--rule);background:transparent;font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:7px 10px;color:var(--ink)">Edit format &amp; pairings</button>
+        ${session.matches.length ? (() => {
+          const nPhotos = photosFor(state, session.id).length, vs = verifyStatus(session);
+          const tag = vs === 'ok' ? ' &middot; &check; verified' : vs === 'stale' ? ' &middot; changed since verified' : '';
+          return `<button data-action="open-verify" data-session="${session.id}" style="border:1px solid var(--accent);background:${vs === 'ok' ? 'var(--accent)' : 'transparent'};color:${vs === 'ok' ? '#fff' : 'var(--accent)'};font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:7px 10px">Scorecards &amp; verify &middot; ${nPhotos} photo${nPhotos === 1 ? '' : 's'}${tag}</button>`;
+        })() : ''}
+      </div>
     </div>`;
   }).join('');
+}
+
+// ---------- Verify (scorecard photos vs. scores in the app) ----------
+function renderScoreTable(state, session, course, match) {
+  const n = course.holes.length, half = Math.ceil(n / 2);
+  const results = computeHoleResults(match, course.holes);
+  const ids = match.sideA.concat(match.sideB);
+  const lbl = matchStateLabel(results, n, sideShortLabel(state, session, match.sideA), sideShortLabel(state, session, match.sideB), maxPerHole(match.format));
+  const cols = [];
+  for (let i = 0; i < half; i++) cols.push({ hole: i });
+  cols.push({ sum: 'OUT', from: 0, to: half });
+  for (let i = half; i < n; i++) cols.push({ hole: i });
+  cols.push({ sum: 'IN', from: half, to: n });
+  cols.push({ sum: 'TOT', from: 0, to: n });
+
+  const cell = 'min-width:30px;height:32px;padding:0;text-align:center;font-size:13px;font-weight:700;border:0;border-bottom:1px solid var(--rule-faint);background:transparent;color:var(--ink)';
+  const sticky = 'position:sticky;left:0;z-index:1;background:var(--bg);text-align:left;padding:0 8px;min-width:78px;white-space:nowrap;border-right:1px solid var(--rule)';
+  const sumCss = 'background:var(--row-alt);font-weight:800';
+  const grossOf = (id, h) => (match.grossScores[id] ? match.grossScores[id][course.holes[h].n] : undefined);
+  const sumOf = (id, from, to) => { let t = 0, any = false; for (let h = from; h < to; h++) { const g = grossOf(id, h); if (g != null) { t += g; any = true; } } return any ? t : null; };
+  const parSum = (from, to) => course.holes.slice(from, to).reduce((a, h) => a + h.par, 0);
+
+  const headRow = `<tr><td style="${cell};${sticky};font-size:9px;letter-spacing:.1em;color:var(--muted)">HOLE</td>${cols.map((c) => c.sum
+    ? `<td style="${cell};${sumCss};font-size:10px">${c.sum}</td>`
+    : `<td style="${cell};padding:0"><button data-action="fix-hole" data-match="${match.id}" data-idx="${c.hole}" style="${cell};width:100%;border:0;font-size:11px;color:var(--muted)">${c.hole + 1}</button></td>`).join('')}</tr>`;
+  const parRow = `<tr><td style="${cell};${sticky};font-size:9px;letter-spacing:.1em;color:var(--muted)">PAR</td>${cols.map((c) => c.sum
+    ? `<td style="${cell};${sumCss};font-size:11px">${parSum(c.from, c.to)}</td>`
+    : `<td style="${cell};font-size:11px;color:var(--muted)">${course.holes[c.hole].par}</td>`).join('')}</tr>`;
+  const playerRows = ids.map((id) => {
+    const p = PLAYERS_BY_ID[id];
+    return `<tr><td style="${cell};${sticky}"><span style="display:inline-block;width:8px;height:8px;margin-right:6px;background:${p.team === 'L' ? 'var(--accent)' : 'var(--team2)'}"></span>${p.name}</td>${cols.map((c) => {
+      if (c.sum) { const t = sumOf(id, c.from, c.to); return `<td style="${cell};${sumCss}">${t == null ? '–' : t}</td>`; }
+      const g = grossOf(id, c.hole);
+      return `<td style="${cell};padding:0"><button data-action="fix-hole" data-match="${match.id}" data-idx="${c.hole}" style="${cell};width:100%;${g == null ? 'color:var(--muted)' : ''}">${g == null ? '–' : g}</button></td>`;
+    }).join('')}</tr>`;
+  }).join('');
+  const resultRow = `<tr><td style="${cell};${sticky};font-size:9px;letter-spacing:.1em;color:var(--muted)">HOLE WON</td>${cols.map((c) => c.sum
+    ? `<td style="${cell};${sumCss}"></td>`
+    : `<td style="${cell}"><div style="width:14px;height:14px;margin:0 auto;background:${c.hole < results.length ? holeFill(results[c.hole]) : 'var(--rule-faint)'}"></div></td>`).join('')}</tr>`;
+
+  return `
+  <div style="padding:14px 18px 4px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px">
+      <div style="font-size:13px;font-weight:800;min-width:0">${esc(playerNames(match.sideA))} <span style="color:var(--muted)">v</span> ${esc(playerNames(match.sideB))}</div>
+      <div style="font-size:12px;font-weight:800;color:${lbl.color};white-space:nowrap">${esc(lbl.text)}</div>
+    </div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--rule)">
+      <table style="border-collapse:collapse;width:max-content;min-width:100%">${headRow}${parRow}${playerRows}${resultRow}</table>
+    </div>
+  </div>`;
+}
+
+function renderVerify(state) {
+  const session = findSession(state.ui.verifySessionId);
+  const course = courseFor(session);
+  const photos = photosFor(state, session.id);
+  const status = verifyStatus(session);
+  const v = session.verified;
+
+  const addTile = `<label style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;text-align:center;border:1px dashed var(--accent);font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);padding:6px;cursor:pointer">+ Add photo<input type="file" accept="image/*" multiple data-action="photo-file" data-session="${session.id}" style="display:none"></label>`;
+  const thumbs = photos.map((p) => `
+    <button data-action="view-photo" data-photo="${p.id}" style="padding:0;border:1px solid var(--rule);background:#fff;aspect-ratio:1;overflow:hidden;position:relative">
+      <img src="${p.thumb}" alt="Scorecard photo" style="width:100%;height:100%;object-fit:cover;display:block">
+      <span style="position:absolute;left:0;right:0;bottom:0;background:rgba(10,16,48,.78);color:#fff;font-size:9px;font-weight:800;padding:3px 4px;text-align:left">${esc(p.by)} &middot; ${timeAgo(p.ts)}</span>
+    </button>`).join('');
+
+  let statusBox;
+  if (status === 'ok') {
+    statusBox = `<div style="background:var(--accent);color:#fff;padding:12px 14px"><div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;opacity:.8">Verified</div><div style="font-size:15px;font-weight:800;margin-top:2px">&check; ${esc(v.by)} checked these scores against the scorecards &middot; ${timeAgo(v.ts)}</div></div>`;
+  } else if (status === 'stale') {
+    statusBox = `<div style="border:2px solid var(--accent);padding:12px 14px"><div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Scores changed since verified</div><div style="font-size:13px;line-height:1.45;margin-top:3px">${esc(v.by)} verified an earlier version. Check the scores below against the cards again.</div></div>`;
+  } else {
+    statusBox = `<div style="border:1px solid var(--rule);padding:12px 14px"><div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)">Not verified yet</div><div style="font-size:13px;line-height:1.45;margin-top:3px">Add a photo of each paper card, compare it with the scores below, fix anything that's off (tap a score), then confirm.</div></div>`;
+  }
+  const verifyBtn = status === 'ok'
+    ? `<button data-action="clear-verified" data-session="${session.id}" class="btn btn-secondary btn-block">Undo verification</button>`
+    : `<button data-action="mark-verified" data-session="${session.id}" class="btn btn-primary btn-block">The scores match the paper cards</button>`;
+
+  return `
+  <div>
+    <div style="padding:14px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Scorecard photos &middot; ${photos.length}</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:0 18px 12px">${thumbs}${addTile}</div>
+    <div style="padding:0 18px 12px;font-size:12px;line-height:1.45;color:var(--muted)">Photos are shrunk to a few hundred KB. Tap one to open it full screen and zoom.</div>
+    <div style="border-top:2px solid var(--rule);padding:14px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Scores in the app &middot; ${esc(course.name)} (tap a score to fix it)</div>
+    ${session.matches.map((m) => renderScoreTable(state, session, course, m)).join('')}
+    <div style="border-top:2px solid var(--rule);margin-top:12px;padding:14px 18px 28px;display:flex;flex-direction:column;gap:10px">${statusBox}${verifyBtn}</div>
+  </div>`;
+}
+
+function renderPhotoViewer(state) {
+  const id = state.ui.viewPhotoId;
+  if (!id) return '';
+  const p = state.photos.find((x) => x.id === id);
+  if (!p) return '';
+  const full = PhotoCache[id];
+  const z = state.ui.photoZoom || 1;
+  const btn = 'border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;font-weight:800;font-size:13px;min-width:38px;height:34px;padding:0 10px';
+  return `
+  <div class="photo-view">
+    <div class="photo-bar">
+      <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.by)} &middot; ${timeAgo(p.ts)}</div>
+      <div style="display:flex;gap:6px;flex:none">
+        <button data-action="photo-zoom" data-delta="-1" style="${btn}">&minus;</button>
+        <button data-action="photo-zoom" data-delta="1" style="${btn}">+</button>
+        <button data-action="remove-photo" data-photo="${id}" style="${btn}">Delete</button>
+        <button data-action="close-photo" style="${btn};background:#fff;color:var(--ink)">Close</button>
+      </div>
+    </div>
+    <div class="photo-scroll">${full
+      ? `<img src="${full}" alt="Scorecard photo" style="display:block;max-width:none;width:${z * 100}%;height:auto">`
+      : `<div style="color:#fff;padding:40px 24px;font-size:14px;line-height:1.5">Loading the full-size photo&hellip;<br><span style="opacity:.7;font-size:12px">If it never appears, it was added on another phone and this phone has no signal right now.</span></div>`}</div>
+  </div>`;
 }
 
 // ---------- Setup ----------
@@ -254,7 +378,7 @@ function renderSetup(state) {
     <div>
       <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:7px">Tees</div>
       <select data-action="set-tee" data-session="${session.id}" class="field-input" style="padding:11px 10px;font-weight:800">${teeOpts}</select>
-      <div style="font-size:12px;line-height:1.45;color:rgba(32,30,29,.7);margin-top:7px">Shown as rating/slope. Par ${course.par}. Each player's course handicap is worked out from their Handicap Index for these tees.</div>
+      <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7);margin-top:7px">Shown as rating/slope. Par ${course.par}. Each player's course handicap is worked out from their Handicap Index for these tees.</div>
     </div>`;
 
   const countsBtns = [{ v: true, name: 'Counts' }, { v: false, name: 'Doesn’t count' }].map((o) => {
@@ -266,7 +390,7 @@ function renderSetup(state) {
     <div>
       <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:7px">Team event</div>
       <div style="display:flex;background:var(--rule);gap:1px;border:1px solid var(--rule)">${countsBtns}</div>
-      <div style="font-size:12px;line-height:1.5;color:rgba(32,30,29,.7);margin-top:7px">${counts
+      <div style="font-size:12px;line-height:1.5;color:rgba(10,16,48,.7);margin-top:7px">${counts
         ? `Nassau: front, back and overall are 1 point each. ${matchCount} matches &times; 3 = <strong>${matchCount * 3} points</strong> on offer.`
         : 'Still played as a Nassau, but none of it counts toward the Hawks Cup points.'}</div>
     </div>
@@ -282,7 +406,7 @@ function renderSetup(state) {
     const order = team === 'L' ? session.teamLOrder : session.teamTOrder;
     const roster = PLAYERS.filter((p) => p.team === team);
     const opts = roster.map((p) => `<option value="${p.id}"${p.id === order[slot] ? ' selected' : ''}>${p.name} (CH ${Math.min(courseHandicapFor(p.id, session), MAX_HCP)})</option>`).join('');
-    return `<select data-action="set-slot" data-session="${session.id}" data-team="${team}" data-slot="${slot}" class="field-input" style="padding:9px 8px;border-left:4px solid ${team === 'L' ? 'var(--accent)' : 'var(--ink)'}">${opts}</select>`;
+    return `<select data-action="set-slot" data-session="${session.id}" data-team="${team}" data-slot="${slot}" class="field-input" style="padding:9px 8px;border-left:4px solid ${team === 'L' ? 'var(--accent)' : 'var(--team2)'}">${opts}</select>`;
   };
   const sideCol = (team, matchIdx) => Array.from({ length: perSide }, (_, k) => slotSelect(team, matchIdx * perSide + k)).join('');
   const pairRows = pairings.map((p, i) => `
@@ -293,7 +417,7 @@ function renderSetup(state) {
       </div>
       <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center">
         <div style="display:flex;flex-direction:column;gap:6px">${sideCol('L', i)}</div>
-        <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:rgba(32,30,29,.35)">V</div>
+        <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:rgba(10,16,48,.35)">V</div>
         <div style="display:flex;flex-direction:column;gap:6px">${sideCol('T', i)}</div>
       </div>
     </div>`).join('');
@@ -317,7 +441,7 @@ function renderSetup(state) {
     ${teamEvent}
     <div>
       <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Who plays whom &mdash; ${session.shape === 'singles' ? '4 singles matches' : pairings.length + ' matches'}</div>
-      <div style="font-size:12px;line-height:1.45;color:rgba(32,30,29,.7);margin-bottom:8px">${esc(state.teamOneName)} on the left, ${esc(state.teamTwoName)} on the right. Tap a name to change it &mdash; picking someone already in another match swaps the two. (CH = course handicap on these tees.)</div>
+      <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7);margin-bottom:8px">${esc(state.teamOneName)} on the left, ${esc(state.teamTwoName)} on the right. Tap a name to change it &mdash; picking someone already in another match swaps the two. (CH = course handicap on these tees.)</div>
       <div style="border:1px solid var(--rule)">${pairRows}</div>
     </div>
     ${hasScores ? `<div style="border:1px solid var(--accent);padding:10px;font-size:12px;line-height:1.45"><strong style="color:var(--accent)">Scores already entered.</strong> Locking in again replaces this round's matches and clears its scores.</div>` : ''}
@@ -355,7 +479,7 @@ function renderCard(state) {
   } else {
     holeResultText = holeDelta > 0 ? `${nickA} win ${bd.lowA} to ${bd.lowB}` : `${nickB} win ${bd.lowB} to ${bd.lowA}`;
   }
-  const holeResultColor = holeDelta > 0 ? 'var(--accent)' : holeDelta < 0 ? 'var(--ink)' : 'rgba(32,30,29,.6)';
+  const holeResultColor = holeDelta > 0 ? 'var(--accent)' : holeDelta < 0 ? 'var(--team2-text)' : 'rgba(10,16,48,.6)';
 
   const cardHoles = course.holes.map((h, i) => {
     let fill;
@@ -365,7 +489,7 @@ function renderCard(state) {
     const ring = i === view.holeIdx ? '2px solid var(--accent)' : 'none';
     return `<button data-action="go-to-hole" data-match="${match.id}" data-idx="${i}" style="flex:1;border:0;padding:0;background:transparent">
       <div style="height:20px;background:${fill};outline:${ring};outline-offset:-2px"></div>
-      <div style="font-size:7px;font-weight:800;color:rgba(32,30,29,.45);margin-top:2px">${h.n}</div>
+      <div style="font-size:7px;font-weight:800;color:rgba(10,16,48,.45);margin-top:2px">${h.n}</div>
     </button>`;
   }).join('');
 
@@ -374,8 +498,8 @@ function renderCard(state) {
     const shots = shotsOnHole(strokes[id], hole.si);
     const net = nets[id];
     return `
-    <div style="display:flex;align-items:center;gap:10px;padding:10px 18px;border-bottom:1px solid var(--rule);background:${p.team === 'L' ? 'transparent' : 'rgba(32,30,29,.04)'}">
-      <div style="width:9px;height:9px;flex:none;background:${p.team === 'L' ? 'var(--accent)' : 'var(--ink)'}"></div>
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 18px;border-bottom:1px solid var(--rule);background:${p.team === 'L' ? 'transparent' : 'rgba(10,16,48,.04)'}">
+      <div style="width:9px;height:9px;flex:none;background:${p.team === 'L' ? 'var(--accent)' : 'var(--team2)'}"></div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:5px">
           <span style="font-size:14px;font-weight:800">${p.name}</span>
@@ -401,7 +525,7 @@ function renderCard(state) {
     <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:13px 18px;border-bottom:2px solid var(--rule)">
       <div>
         <div style="font-size:13px;font-weight:800">${esc(shortA)}</div>
-        <div style="font-size:13px;font-weight:800;color:rgba(32,30,29,.7)">${esc(shortB)}</div>
+        <div style="font-size:13px;font-weight:800;color:rgba(10,16,48,.7)">${esc(shortB)}</div>
       </div>
       <div style="text-align:right">
         <div style="font-size:19px;font-weight:800;color:${headerLabel.color};line-height:1">${esc(headerLabel.text)}</div>
@@ -445,7 +569,7 @@ function renderMoney(state) {
     const ctpEvents = state.sideGameEvents.filter((e) => e.type !== 'Skin').sort((a, b) => b.ts - a.ts);
     const skinRows = skinEvents.length ? skinEvents.map((e) => `
       <div style="display:flex;align-items:center;gap:12px;padding:10px 18px;border-bottom:1px solid var(--rule)">
-        <div style="font-size:11px;font-weight:800;color:rgba(32,30,29,.35);width:22px">${e.holeN}</div>
+        <div style="font-size:11px;font-weight:800;color:rgba(10,16,48,.35);width:22px">${e.holeN}</div>
         <div style="flex:1;font-size:13px;font-weight:800">${esc(PLAYERS_BY_ID[e.playerId].name)}</div>
         <div style="font-size:11px;color:var(--muted)">won it outright</div>
         <div style="font-size:13px;font-weight:800;color:var(--accent);width:46px;text-align:right">$${e.amount}</div>
@@ -464,7 +588,7 @@ function renderMoney(state) {
           <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Side games so far</div>
           <div style="font-size:11px;color:var(--muted)">$${pot} tagged</div>
         </div>
-        <div style="font-size:12px;line-height:1.45;color:rgba(32,30,29,.7);margin-top:6px">Skins, CTPs and greenies get tagged from the Score screen while you play — whoever has the best net on a tagged hole wins it.</div>
+        <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7);margin-top:6px">Skins, CTPs and greenies get tagged from the Score screen while you play — whoever has the best net on a tagged hole wins it.</div>
       </div>
       ${skinRows}
       <div style="padding:16px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);border-top:2px solid var(--rule)">Closest to pin &amp; greenies</div>
@@ -474,7 +598,7 @@ function renderMoney(state) {
     const totals = ledgerTotals(state);
     const rows = PLAYERS.slice().sort((a, b) => totals[b.id] - totals[a.id]).map((p) => `
       <div style="display:flex;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid var(--rule)">
-        <div style="width:9px;height:9px;flex:none;background:${p.team === 'L' ? 'var(--accent)' : 'var(--ink)'}"></div>
+        <div style="width:9px;height:9px;flex:none;background:${p.team === 'L' ? 'var(--accent)' : 'var(--team2)'}"></div>
         <div style="flex:1;min-width:0">
           <div style="font-size:14px;font-weight:800">${p.name}</div>
           <div style="font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)">${esc(ledgerDetail(state, p.id))}</div>
@@ -484,7 +608,7 @@ function renderMoney(state) {
     const net = Object.values(totals).reduce((a, b) => a + b, 0);
     const moved = state.ledger.filter((e) => e.amount > 0).reduce((a, e) => a + e.amount, 0);
     body = `
-      <div style="padding:14px 18px;border-bottom:2px solid var(--rule);font-size:12px;line-height:1.45;color:rgba(32,30,29,.7)">Skins, greenies, CTPs and fines net into one balance per man. Nobody pays anybody until Tobacco Road is in the books.</div>
+      <div style="padding:14px 18px;border-bottom:2px solid var(--rule);font-size:12px;line-height:1.45;color:rgba(10,16,48,.7)">Skins, greenies, CTPs and fines net into one balance per man. Nobody pays anybody until Tobacco Road is in the books.</div>
       ${rows}
       <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:2px solid var(--rule);background:var(--row-alt)">
         <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase">Pot in play</div>
@@ -536,7 +660,7 @@ function renderFeed(state) {
     <div style="padding:12px 18px;border-bottom:1px solid var(--rule);background:${f.isSystem ? 'var(--row-alt)' : 'transparent'}">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
         <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:${f.isSystem || f.author === myName(state) ? 'var(--accent)' : 'var(--ink)'}">${esc(f.author)}</div>
-        <div style="font-size:10px;color:rgba(32,30,29,.45)">${timeAgo(f.ts)}</div>
+        <div style="font-size:10px;color:rgba(10,16,48,.45)">${timeAgo(f.ts)}</div>
       </div>
       <div style="font-size:${f.isSystem ? '15px' : '14px'};font-weight:${f.isSystem ? '800' : '400'};line-height:1.35;letter-spacing:-.01em;margin-top:3px">${esc(f.text)}</div>
     </div>`).join('');
@@ -556,7 +680,7 @@ function renderTeams(state) {
   const totals = ledgerTotals(state);
   const blocks = [
     { name: state.teamOneName, captain: 'David', team: 'L', bg: 'var(--accent)', fg: '#fff' },
-    { name: state.teamTwoName, captain: 'Tom', team: 'T', bg: 'var(--ink)', fg: '#fff' },
+    { name: state.teamTwoName, captain: 'Tom', team: 'T', bg: 'var(--team2)', fg: '#fff' },
   ].map((t) => {
     const cupT = cupTotals(state.sessions);
     const score = t.team === 'L' ? cupT.team1 : cupT.team2;
@@ -608,7 +732,7 @@ function renderTripSettings(state) {
   return `
   <div style="border-top:2px solid var(--rule);margin-top:14px;padding:14px 18px 30px;display:flex;flex-direction:column;gap:8px">
     <div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">This phone</div>
-    <div style="font-size:12px;line-height:1.45;color:rgba(32,30,29,.7)">Playing as <strong>${esc(myName(state))}</strong>${code ? ` &middot; trip code <strong>${esc(code)}</strong>` : syncAvailable() ? '' : ' &middot; saving on this phone only'}.</div>
+    <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7)">Playing as <strong>${esc(myName(state))}</strong>${code ? ` &middot; trip code <strong>${esc(code)}</strong>` : syncAvailable() ? '' : ' &middot; saving on this phone only'}.</div>
     <button data-action="forget-me" style="${btn}">Not you? Switch player</button>
     ${code ? `<button data-action="share-invite" style="${btn}">Copy invite link for the group</button>` : ''}
     <button data-action="reset-trip" data-kind="fresh" style="${btn};color:var(--accent);border-color:var(--accent)">Clear everything &amp; start the trip</button>
@@ -642,7 +766,7 @@ function renderTrophy(state) {
         <div style="font-size:20px;font-weight:800;opacity:.75;padding-bottom:6px">&ndash; ${fmtPoints(lo)}</div>
       </div>
     </div>
-    <div style="padding:14px 18px;border-bottom:2px solid var(--rule);font-size:12px;line-height:1.45;color:rgba(32,30,29,.7)">${esc(note)}</div>
+    <div style="padding:14px 18px;border-bottom:2px solid var(--rule);font-size:12px;line-height:1.45;color:rgba(10,16,48,.7)">${esc(note)}</div>
     <div style="padding:14px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Awards on the table</div>
     ${awardRows}
     <div style="height:26px"></div>
@@ -651,7 +775,7 @@ function renderTrophy(state) {
 
 const SCREEN_RENDERERS = {
   cup: renderCup, rounds: renderRounds, setup: renderSetup, card: renderCard,
-  money: renderMoney, feed: renderFeed, team: renderTeams, trophy: renderTrophy,
+  money: renderMoney, feed: renderFeed, team: renderTeams, trophy: renderTrophy, verify: renderVerify,
 };
 
 function renderHcpModal(state) {
@@ -712,12 +836,16 @@ function render() {
   // Remote changes can delete what this phone is looking at.
   if (ui.screen === 'card' && !(ui.cardMatchId && matchById(ui.cardMatchId))) ui.screen = 'rounds';
   if (ui.screen === 'setup' && !findSession(ui.setupSessionId)) ui.screen = 'rounds';
+  if (ui.screen === 'verify' && !findSession(ui.verifySessionId)) ui.screen = 'rounds';
+  if (ui.viewPhotoId && !state.photos.some((p) => p.id === ui.viewPhotoId)) ui.viewPhotoId = null;
 
   // Re-rendering replaces the DOM, so carry over scroll position and any
   // half-typed text — otherwise a teammate's score arriving mid-keystroke
   // would eat what you were typing.
   const oldScroll = document.querySelector('.scroll');
   const scrollTop = oldScroll ? oldScroll.scrollTop : 0;
+  const oldPhoto = document.querySelector('.photo-scroll');
+  const photoPos = oldPhoto ? [oldPhoto.scrollTop, oldPhoto.scrollLeft] : null;
   const saved = {};
   PRESERVED_FIELDS.forEach((id) => {
     const el = document.getElementById(id);
@@ -734,6 +862,7 @@ function render() {
     </div>
     ${renderFinesModal(state)}
     ${renderHcpModal(state)}
+    ${renderPhotoViewer(state)}
     ${needsWelcome ? renderWelcome(state) : ''}
   `;
 
@@ -741,6 +870,8 @@ function render() {
   if (newScroll) newScroll.scrollTop = (scrollTopRequested || ui.screen !== lastRenderedScreen) ? 0 : scrollTop;
   scrollTopRequested = false;
   lastRenderedScreen = ui.screen;
+  const newPhoto = document.querySelector('.photo-scroll');
+  if (newPhoto && photoPos) { newPhoto.scrollTop = photoPos[0]; newPhoto.scrollLeft = photoPos[1]; }
 
   Object.keys(saved).forEach((id) => {
     const el = document.getElementById(id);

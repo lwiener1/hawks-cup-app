@@ -152,7 +152,7 @@ function segmentShare(st) {
   return { a: 0.5, b: 0.5, final: st.final };
 }
 
-const MUTED_INK = 'rgba(32,30,29,.5)';
+const MUTED_INK = 'rgba(10,16,48,.5)';
 
 function segmentText(st, nickA, nickB) {
   if (!st.started) return '—';
@@ -168,7 +168,7 @@ function nassauStatus(holeResults, totalHoles, nickA, nickB, maxPer) {
     const st = segmentState(holeResults, seg, maxPer || 1);
     return Object.assign({ key: seg.key, label: seg.label }, st, {
       text: segmentText(st, nickA, nickB),
-      color: !st.started ? MUTED_INK : st.diff > 0 ? RED : INK,
+      color: !st.started ? MUTED_INK : st.diff > 0 ? TEAM1_COLOR : st.diff < 0 ? TEAM2_TEXT : INK,
       share: segmentShare(st),
     });
   });

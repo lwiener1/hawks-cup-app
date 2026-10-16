@@ -147,5 +147,7 @@ const FINE_TYPES = [
   'Whiff', 'Sandbagging confession', 'Phone in the bag',
 ];
 
-const RED = '#ec3013';
-const INK = '#201e1d';
+// Logo palette (keep in step with the CSS variables in styles.css).
+const TEAM1_COLOR = '#0b1a5a';      // navy
+const TEAM2_TEXT = '#4d5262';       // darker silver, readable as text
+const INK = '#0a1030';

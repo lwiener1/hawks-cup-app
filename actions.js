@@ -44,7 +44,9 @@ function goScreen(screen) {
 function goBack() {
   update((state) => {
     const s = state.ui.screen;
-    state.ui.screen = (s === 'card' || s === 'setup') ? 'rounds' : 'cup';
+    if (s === 'card' && state.ui.cardFrom === 'verify' && findSession(state.ui.verifySessionId)) state.ui.screen = 'verify';
+    else state.ui.screen = (s === 'card' || s === 'setup' || s === 'verify') ? 'rounds' : 'cup';
+    state.ui.cardFrom = 'rounds';
   });
 }
 
@@ -53,7 +55,7 @@ function openSetup(sessionId) {
 }
 
 function openCard(matchId) {
-  update((state) => { state.ui.cardMatchId = matchId; state.ui.screen = 'card'; });
+  update((state) => { state.ui.cardMatchId = matchId; state.ui.cardFrom = 'rounds'; state.ui.screen = 'card'; });
 }
 
 function pickCourse(sessionId, courseId) {
@@ -323,8 +325,11 @@ function applyTripCode(rawCode) {
 }
 
 function resetTrip(kind) {
+  const oldPhotoIds = getState().photos.map((p) => p.id);
   update((state) => {
     const base = kind === 'sample' ? seedState(state.ui) : freshState(state.ui);
+    state.photos = [];
+    state.ui.viewPhotoId = null;
     state.sessions = base.sessions;
     state.ledger = base.ledger;
     state.sideGameEvents = base.sideGameEvents;
@@ -333,6 +338,7 @@ function resetTrip(kind) {
     state.ui.cardMatchId = base.ui.cardMatchId;
     state.ui.screen = 'cup';
   });
+  oldPhotoIds.forEach(deletePhotoData);
 }
 
 function inviteLink() {

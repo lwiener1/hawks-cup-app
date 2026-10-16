@@ -47,7 +47,7 @@ async function ensureFirebase() {
 function stopSync() {
   Sync.runId++;
   if (Sync.unsub) { try { Sync.unsub(); } catch (e) { /* already closed */ } }
-  Sync.unsub = null; Sync.col = null; Sync.ready = false; Sync.lastPushed = {};
+  Sync.unsub = null; Sync.col = null; Sync.photosCol = null; Sync.ready = false; Sync.lastPushed = {};
 }
 
 function stableMap(docs) {
@@ -81,6 +81,7 @@ async function startSync() {
     }
     if (runId !== Sync.runId) return;
     Sync.col = db.collection('trips').doc(code).collection('docs');
+    Sync.photosCol = db.collection('trips').doc(code).collection('photos');
     Sync.unsub = Sync.col.onSnapshot({ includeMetadataChanges: true },
       (snap) => { if (runId === Sync.runId) onSyncSnapshot(snap); },
       () => { if (runId === Sync.runId) setSyncStatus('error'); });
