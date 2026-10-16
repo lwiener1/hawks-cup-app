@@ -73,12 +73,12 @@ function buildSessions() {
   const teamL = PLAYERS.filter((p) => p.team === 'L').map((p) => p.id);
   const teamT = PLAYERS.filter((p) => p.team === 'T').map((p) => p.id);
   // The 2026 trip, in playing order. Every match is a Nassau (3 points).
-  // Team event = Southern Pines fourball (2 matches) + Mid Pines low/high
-  // ball (2) + Pine Needles singles (4) = 8 matches x 3 = 24 points, 12.5
+  // Team event = Southern Pines low/high ball (2 matches) + Mid Pines
+  // fourball (2) + Pine Needles singles (4) = 8 matches x 3 = 24 points, 12.5
   // wins. Tobacco Road is played but doesn't count.
   const cfg = [
-    { id: 's1', n: 1, day: 'Fri 11/6 AM', courseId: 'southern-pines', format: 'fourball', shape: 'team', counts: true, tee: 'Tee time TBD' },
-    { id: 's2', n: 2, day: 'Fri 11/6 PM', courseId: 'mid-pines', format: 'lowhigh', shape: 'team', counts: true, tee: 'Tee time TBD' },
+    { id: 's1', n: 1, day: 'Fri 11/6 AM', courseId: 'southern-pines', format: 'lowhigh', shape: 'team', counts: true, tee: 'Tee time TBD' },
+    { id: 's2', n: 2, day: 'Fri 11/6 PM', courseId: 'mid-pines', format: 'fourball', shape: 'team', counts: true, tee: 'Tee time TBD' },
     { id: 's3', n: 3, day: 'Sat 11/7', courseId: 'pine-needles', format: 'singles', shape: 'singles', counts: true, tee: 'Tee time TBD' },
     { id: 's4', n: 4, day: 'Sun 11/8', courseId: 'tobacco-road', format: 'fourball', shape: 'team', counts: false, tee: 'Tee time TBD' },
   ];
@@ -104,25 +104,24 @@ function seedState(ui) {
   const s1 = state.sessions.find((s) => s.id === 's1');
   const s2 = state.sessions.find((s) => s.id === 's2');
 
-  // Session 1 (Southern Pines, fourball): finished.
+  // Session 1 (Southern Pines, low ball / high ball): finished.
   s1.locked = true;
   s1.matches = [
-    makeMatch(['david', 'lenny'], ['tom', 'ben'], 'm1a', 'fourball'),
-    makeMatch(['alex', 'dan'], ['ryan', 'jamey'], 'm1b', 'fourball'),
+    makeMatch(['david', 'lenny'], ['tom', 'ben'], 'm1a', 'lowhigh'),
+    makeMatch(['alex', 'dan'], ['ryan', 'jamey'], 'm1b', 'lowhigh'),
   ];
   seedResultsIntoMatch(s1.matches[0], s1, [1, 0, 1, 0, 1, 0, -1, 0, 1, 0, 0, -1, 0, 1, 0, 0, 1, 0]); // LAWDs sweep all 3 bets
   seedResultsIntoMatch(s1.matches[1], s1, [-1, 0, 0, 1, 0, 0, -1, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0]); // Jesters take front + total, back halved
 
-  // Session 2 (Mid Pines, low ball / high ball): live, 12 holes in. A hole
-  // can be worth 2 here, so the first match has a +2 hole.
+  // Session 2 (Mid Pines, fourball): live, 12 holes in.
   s2.locked = true;
   s2.teamLOrder = ['david', 'dan', 'lenny', 'alex'];
   s2.teamTOrder = ['tom', 'jamey', 'ben', 'ryan'];
   s2.matches = [
-    makeMatch(['david', 'dan'], ['tom', 'jamey'], 'm2a', 'lowhigh'),
-    makeMatch(['lenny', 'alex'], ['ben', 'ryan'], 'm2b', 'lowhigh'),
+    makeMatch(['david', 'dan'], ['tom', 'jamey'], 'm2a', 'fourball'),
+    makeMatch(['lenny', 'alex'], ['ben', 'ryan'], 'm2b', 'fourball'),
   ];
-  seedResultsIntoMatch(s2.matches[0], s2, [0, 2, 0, -1, 1, 0, 0, 1, 0, 0, 0, 0]); // thru 12, front won 3 up
+  seedResultsIntoMatch(s2.matches[0], s2, [0, 1, 1, -1, 1, 0, 0, 1, 0, 0, 0, 0]); // thru 12, front won 3 up
   seedResultsIntoMatch(s2.matches[1], s2, [-1, 0, 0, 1, 0, 0, -1, 0, 0, -1, 1, 0]); // thru 12, 1 down
   linkSession(s1); linkSession(s2);
 
