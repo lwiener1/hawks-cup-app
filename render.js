@@ -124,6 +124,32 @@ function renderCup(state) {
     </button>`;
   }).join('') || `<div style="padding:14px 18px;font-size:13px;color:var(--muted)">Nothing live right now.</div>`;
 
+  // Projected winner: once every team-event round is set and something is
+  // still being played, show who wins if each match finished as it stands now.
+  const cupSessions = state.sessions.filter((s) => sessionCounts(s));
+  const anyLiveCup = cupSessions.some((s) => sessionStatus(s) === 'in-play');
+  const allCupSet = cupSessions.every((s) => sessionStatus(s) !== 'not-set');
+  let projectionStrip = '';
+  if (anyLiveCup && allCupSet && totals.settled < totals.available) {
+    const hi = Math.max(totals.team1, totals.team2), lo = Math.min(totals.team1, totals.team2);
+    const tied = totals.team1 === totals.team2;
+    const t1Lead = totals.team1 > totals.team2;
+    const name = tied ? 'Tied — a push' : t1Lead ? state.teamOneName : state.teamTwoName;
+    const color = tied ? 'var(--ink)' : t1Lead ? 'var(--accent)' : 'var(--team2)';
+    const need = tied ? '' : hi >= totals.toWin
+      ? ` ${fmtPoints(totals.toWin)} wins the cup.`
+      : ` Still ${fmtPoints(totals.toWin - hi)} short of the ${fmtPoints(totals.toWin)} needed.`;
+    projectionStrip = `
+    <div style="padding:12px 18px;border-bottom:2px solid var(--rule);background:var(--row-alt)">
+      <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)">Projected ${tied ? 'result' : 'winner'} &middot; if every match ended now</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:3px">
+        <div style="font-size:18px;font-weight:800;letter-spacing:-.015em;color:${color}">${esc(name)}</div>
+        <div style="font-size:18px;font-weight:800;color:${color};white-space:nowrap">${fmtPoints(hi)} &ndash; ${fmtPoints(lo)}</div>
+      </div>
+      <div style="font-size:11px;line-height:1.4;color:var(--muted);margin-top:2px">Live matches can still swing.${need}</div>
+    </div>`;
+  }
+
   const sessionRows = state.sessions.map((session, idx) => {
     const course = courseFor(session);
     const status = sessionStatus(session);
@@ -171,6 +197,7 @@ function renderCup(state) {
     <div style="display:flex;justify-content:space-between;padding:7px 18px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-bottom:2px solid var(--rule)">
       <span>${fmtPoints(totals.settled)} of ${fmtPoints(totals.available)} settled</span><span>${fmtPoints(totals.toWin)} wins the cup</span>
     </div>
+    ${projectionStrip}
     <div style="padding:14px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">On the course now</div>
     ${liveRows}
     <div style="border-top:2px solid var(--rule);padding:14px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Sessions</div>
