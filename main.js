@@ -23,6 +23,7 @@ document.addEventListener('click', (ev) => {
     }
     case 'step-gross': stepGross(a.match, a.player, Number(a.delta)); break;
     case 'toggle-tag': toggleTag(a.match, a.tag); break;
+    case 'toggle-tag-who': toggleTagWho(a.match, a.tag, a.player); break;
     case 'go-to-hole': goToHole(a.match, Number(a.idx)); break;
     case 'step-hole': stepHole(a.match, Number(a.delta)); break;
     case 'post-hole': postHoleAndAdvance(a.match); break;
@@ -30,6 +31,26 @@ document.addEventListener('click', (ev) => {
     case 'open-fines': openFines(); break;
     case 'close-fines': closeFines(); break;
     case 'close-fines-backdrop': closeFines(); break;
+    case 'open-money-entry': openMoneyModal('entry'); break;
+    case 'open-money-payout': openMoneyModal('payout'); break;
+    case 'close-money-modal': closeMoneyModal(); break;
+    case 'submit-money-entry': {
+      const amount = Number(document.getElementById('money-amount').value);
+      if (!(amount > 0) || amount > 10000) { alert('Enter a dollar amount between 1 and 10,000.'); break; }
+      addMoneyEntry(document.getElementById('money-player').value, document.getElementById('money-dir').value, amount, document.getElementById('money-note').value);
+      break;
+    }
+    case 'submit-money-payout': {
+      const amount = Number(document.getElementById('payout-amount').value);
+      const pick = (document.getElementById('payout-winner').value || '').split('|');
+      if (pick.length !== 2) { alert('Lock in a round with matches first.'); break; }
+      if (!(amount > 0) || amount > 10000) { alert('Enter a dollar amount between 1 and 10,000.'); break; }
+      payoutMatch(pick[0], pick[1], amount);
+      break;
+    }
+    case 'remove-ledger':
+      if (confirm('Remove this money entry for everyone?')) removeLedgerEntry(a.entry);
+      break;
     case 'submit-fine': {
       const player = document.getElementById('fine-player').value;
       const type = document.getElementById('fine-type').value;
@@ -70,6 +91,9 @@ document.addEventListener('click', (ev) => {
       if (confirm('Delete this scorecard photo for everyone?')) removePhoto(a.photo);
       break;
     case 'fix-hole': fixHole(a.match, Number(a.idx)); break;
+    case 'hammer-throw': throwHammer(a.match, a.side); break;
+    case 'hammer-answer': answerHammer(a.match, a.resp); break;
+    case 'hammer-undo': undoHammer(a.match); break;
     case 'mark-verified': {
       if (photosFor(getState(), a.session).length === 0 &&
           !confirm('No scorecard photo has been added for this round. Mark the scores as verified anyway?')) break;

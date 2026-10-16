@@ -16,15 +16,41 @@ function sideShortLabel(state, session, side) {
   return teamNickname(team === 'L' ? state.teamOneName : state.teamTwoName);
 }
 
+// Where the team event stands in money terms. It only settles once the result
+// can no longer change: a team has banked enough points to win (counting
+// finished bets only), or every point is in and it's level (a push).
+function teamEventStatus(state) {
+  const t = cupTotals(state.sessions);
+  const base = { stake: TEAM_EVENT_STAKE, team1: t.team1, team2: t.team2, settled1: t.settled1, settled2: t.settled2, toWin: t.toWin, available: t.available };
+  if (t.settled1 >= t.toWin) return Object.assign(base, { state: 'won', winner: 'L' });
+  if (t.settled2 >= t.toWin) return Object.assign(base, { state: 'won', winner: 'T' });
+  if (t.available > 0 && t.settled >= t.available) return Object.assign(base, { state: 'push', winner: null });
+  return Object.assign(base, { state: 'open', winner: null });
+}
+
+// Money entries that are worked out from the scores rather than stored: once
+// the team event is decided, each loser pays and each winner receives the stake.
+function teamEventEntries(state) {
+  const s = teamEventStatus(state);
+  if (s.state !== 'won') return [];
+  return PLAYERS.map((p) => ({
+    id: 'teamevent_' + p.id, playerId: p.id, derived: true, ts: 0,
+    amount: p.team === s.winner ? TEAM_EVENT_STAKE : -TEAM_EVENT_STAKE,
+    detail: p.team === s.winner ? 'Team event win' : 'Team event loss',
+  }));
+}
+
+function allLedger(state) { return state.ledger.concat(teamEventEntries(state)); }
+
 function ledgerTotals(state) {
   const totals = {};
   PLAYERS.forEach((p) => { totals[p.id] = 0; });
-  state.ledger.forEach((e) => { totals[e.playerId] = (totals[e.playerId] || 0) + e.amount; });
+  allLedger(state).forEach((e) => { totals[e.playerId] = (totals[e.playerId] || 0) + e.amount; });
   return totals;
 }
 
 function ledgerDetail(state, playerId) {
-  const entries = state.ledger.filter((e) => e.playerId === playerId).sort((a, b) => b.ts - a.ts);
+  const entries = allLedger(state).filter((e) => e.playerId === playerId).sort((a, b) => (b.ts || Infinity) - (a.ts || Infinity));
   if (entries.length === 0) return 'No games yet';
   return entries.slice(0, 2).map((e) => e.detail).join(' · ');
 }
@@ -112,11 +138,13 @@ function computeAwards(state) {
     (a, b) => (netToPar[a.id] / (holesCounted[a.id] || 1)) - (netToPar[b.id] / (holesCounted[b.id] || 1))
   )[0];
 
-  // Most fines: negative ledger entries with "fine" in the detail
+  // Most fines: only real fines (entries made with "Charge a fine"; sample
+  // data from before that had no kind, so a plain negative counts there).
   const fineCounts = {};
   PLAYERS.forEach((p) => { fineCounts[p.id] = 0; });
   state.ledger.forEach((e) => {
-    if (e.amount < 0) fineCounts[e.playerId] = (fineCounts[e.playerId] || 0) + 1;
+    const isFine = e.kind === 'fine' || (e.kind == null && e.amount < 0 && !e.matchId);
+    if (isFine) fineCounts[e.playerId] = (fineCounts[e.playerId] || 0) + 1;
   });
   const mostFined = PLAYERS.slice().sort((a, b) => fineCounts[b.id] - fineCounts[a.id])[0];
 

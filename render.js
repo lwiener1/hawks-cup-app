@@ -30,7 +30,7 @@ function headerInfo(state) {
   }
   const map = {
     cup: { kicker: 'Standings', title: 'The Hawks Cup', right: new Date().toLocaleDateString('en-US', { weekday: 'short' }) },
-    rounds: { kicker: 'Schedule', title: 'Sessions', right: '5 rounds' },
+    rounds: { kicker: 'Schedule', title: 'Sessions', right: '4 rounds' },
     money: { kicker: 'Games & money', title: 'The pot', right: moneyMovedLabel(state) },
     feed: { kicker: 'The group', title: 'Chatter', right: '8 golfers' },
     team: { kicker: 'Rosters', title: 'Teams & courses', right: '8 golfers' },
@@ -45,7 +45,7 @@ const SYNC_LABELS = {
 };
 
 function moneyMovedLabel(state) {
-  const total = state.ledger.filter((e) => e.amount > 0).reduce((a, e) => a + e.amount, 0);
+  const total = allLedger(state).filter((e) => e.amount > 0).reduce((a, e) => a + e.amount, 0);
   return `$${total} moved`;
 }
 
@@ -230,6 +230,10 @@ function renderRounds(state) {
     </div>`;
   }).join('');
 }
+
+// A claw hammer drawn in SVG (no emoji, so it takes the team colors and looks
+// the same on every phone).
+const HAMMER_ICON = '<svg class="hammer-ico" viewBox="0 0 32 32" aria-hidden="true"><g fill="currentColor"><rect x="14.2" y="9" width="4.6" height="22" rx="1.4"/><path d="M8 5h15a2.4 2.4 0 0 1 2.4 2.4v3.2A2.4 2.4 0 0 1 23 13H8z"/><path d="M8 5 2 3v12l6-2z"/></g></svg>';
 
 // ---------- Verify (scorecard photos vs. scores in the app) ----------
 function renderScoreTable(state, session, course, match) {
@@ -468,7 +472,8 @@ function renderCard(state) {
   const nets = {};
   ids.forEach((id) => { nets[id] = netScore(view.gross[id], strokes[id], hole.si); });
   const bd = holeBreakdown(match, hole, view.gross);
-  const holeDelta = bd.result;
+  const hammerNow = hammerOutcome(view.hammer);
+  const holeDelta = applyHammer(bd.result, view.hammer);
   const winner = holeDelta > 0 ? nickA : nickB;
   let holeResultText;
   if (match.format === 'lowhigh') {
@@ -479,6 +484,8 @@ function renderCard(state) {
   } else {
     holeResultText = holeDelta > 0 ? `${nickA} win ${bd.lowA} to ${bd.lowB}` : `${nickB} win ${bd.lowB} to ${bd.lowA}`;
   }
+  if (hammerNow.folded) holeResultText = `${hammerNow.folded === 'A' ? nickA : nickB} win the hole (fold) ×${hammerNow.mult}`;
+  else if (hammerNow.mult > 1) holeResultText += ` ×${hammerNow.mult}`;
   const holeResultColor = holeDelta > 0 ? 'var(--accent)' : holeDelta < 0 ? 'var(--team2-text)' : 'rgba(10,16,48,.6)';
 
   const cardHoles = course.holes.map((h, i) => {
@@ -515,9 +522,68 @@ function renderCard(state) {
     </div>`;
   }).join('');
 
-  const tagBtns = TAG_TYPES.map((t) => {
+  let hammerBlock = '';
+  if (isHammerGame(match)) {
+    const h = hammerOutcome(view.hammer);
+    const sideNick = (s) => (s === 'A' ? nickA : nickB);
+    const hammerBtn = (attrs, cls, label, mult) => `
+      <button ${attrs} class="hammer-btn ${cls}">${HAMMER_ICON}<span>${label}</span>${mult ? `<span class="mult">&times;${mult}</span>` : ''}</button>`;
+    const valueChip = `<div class="hammer-value${h.mult > 1 ? ' hot' : ''}"><span>Hole value</span><strong>&times;${h.mult}</strong></div>`;
+    const mid = `data-match="${match.id}"`;
+    let body;
+    if (h.folded) {
+      body = `
+        <div class="hammer-banner">${HAMMER_ICON}<div><strong>Folded.</strong> ${esc(sideNick(h.folded))} take the hole at &times;${h.mult}.</div></div>`;
+    } else if (h.pending) {
+      body = `
+        <div class="hammer-banner hammer-swing">${HAMMER_ICON}<div><strong>${esc(sideNick(h.pending))} threw the hammer.</strong> Take it and the hole is worth &times;${h.mult * 2}. Fold and ${esc(sideNick(h.pending))} win the hole at &times;${h.mult}.</div></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <div style="flex:1">${hammerBtn(`data-action="hammer-answer" data-resp="accept" ${mid}`, 'hammer-live', 'Take it', h.mult * 2)}</div>
+          <div style="flex:1">${hammerBtn(`data-action="hammer-answer" data-resp="fold" ${mid}`, 'silver', 'Fold', '')}</div>
+        </div>`;
+    } else if (h.holder) {
+      body = `
+        <div style="font-size:12px;font-weight:800;margin-bottom:8px">${esc(sideNick(h.holder))} hold the hammer.</div>
+        ${hammerBtn(`data-action="hammer-throw" data-side="${h.holder}" ${mid}`, h.holder === 'A' ? 'hammer-live' : 'silver hammer-live', `${esc(sideNick(h.holder))} throw it back`, h.mult * 2)}`;
+    } else {
+      body = `
+        <div style="display:flex;gap:8px">
+          <div style="flex:1">${hammerBtn(`data-action="hammer-throw" data-side="A" ${mid}`, '', `${esc(nickA)} hammer`, h.mult * 2)}</div>
+          <div style="flex:1">${hammerBtn(`data-action="hammer-throw" data-side="B" ${mid}`, 'silver', `${esc(nickB)} hammer`, h.mult * 2)}</div>
+        </div>`;
+    }
+    hammerBlock = `
+    <div style="padding:12px 18px;border-bottom:2px solid var(--rule)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px">
+        <div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">The hammer &middot; hole ${hole.n}</div>
+        ${valueChip}
+      </div>
+      ${body}
+      ${view.hammer.length ? `<button data-action="hammer-undo" ${mid} style="border:0;background:transparent;color:var(--muted);font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:10px 0 0">Undo last hammer action</button>` : ''}
+      <div style="font-size:11px;line-height:1.45;color:var(--muted);margin-top:8px">Either side can throw the hammer during a hole. The other side must take it (the hole doubles, and they can throw it back) or fold (the thrower wins the hole). A hammered hole counts for its full value in the front, back and overall bets.</div>
+    </div>`;
+  }
+
+  const holeTags = tagsForHole(hole);
+  const tagBtns = holeTags.map((t) => {
     const on = view.tags.includes(t);
     return `<button data-action="toggle-tag" data-match="${match.id}" data-tag="${t}" style="flex:1 0 auto;border:0;background:${on ? 'var(--accent)' : 'var(--bg)'};color:${on ? '#fff' : 'var(--ink)'};font-weight:800;font-size:11px;letter-spacing:.04em;text-transform:uppercase;padding:9px 11px">${t}</button>`;
+  }).join('');
+
+  // For each active tag that needs a player: who is it?
+  const tagWhoBlocks = holeTags.filter((t) => view.tags.includes(t) && TAG_RULES[t]).map((t) => {
+    const rule = TAG_RULES[t];
+    const picked = view.who[t] || [];
+    const chips = match.sideA.concat(match.sideB).map((id) => {
+      const on = picked.includes(id);
+      return `<button data-action="toggle-tag-who" data-match="${match.id}" data-tag="${t}" data-player="${id}" style="flex:1 0 auto;border:0;background:${on ? 'var(--accent)' : 'var(--bg)'};color:${on ? '#fff' : 'var(--ink)'};font-weight:800;font-size:12px;padding:10px 12px">${esc(PLAYERS_BY_ID[id].name)}</button>`;
+    }).join('');
+    const warn = picked.length ? '' : `<span style="color:var(--accent)"> &mdash; pick one or nothing is ${rule.mode === 'fine' ? 'charged' : 'paid'}</span>`;
+    return `
+    <div style="margin:10px 18px 0">
+      <div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding-bottom:5px">${esc(rule.ask)}${warn}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:1px;background:var(--rule);border:1px solid var(--rule)">${chips}</div>
+    </div>`;
   }).join('');
 
   return `
@@ -536,6 +602,7 @@ function renderCard(state) {
       ${nassauChips(headerLabel.segments)}
       <div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:6px">${esc(gameFor(session).name)} &middot; Nassau &middot; ${esc(cardTee.name)} tees &middot; ${sessionCounts(session) ? 'counts toward the team event' : 'does not count toward the team event'}</div>
     </div>
+    ${hammerBlock}
     <div style="display:flex;gap:2px;padding:10px 18px;border-bottom:1px solid var(--rule)">${cardHoles}</div>
     <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 18px;border-bottom:2px solid var(--rule)">
       <button data-action="step-hole" data-match="${match.id}" data-delta="-1" style="border:1px solid var(--rule);background:transparent;font-weight:800;font-size:16px;width:34px;height:34px">&larr;</button>
@@ -550,8 +617,10 @@ function renderCard(state) {
       <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)">This hole</div>
       <div style="font-size:15px;font-weight:800;color:${holeResultColor}">${esc(holeResultText)}</div>
     </div>
-    <div style="padding:12px 18px 8px;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)">Tag the hole</div>
+    <div style="padding:12px 18px 8px;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)">Tag the hole &middot; side bets &amp; fines</div>
     <div style="display:flex;flex-wrap:wrap;gap:1px;background:var(--rule);margin:0 18px;border:1px solid var(--rule)">${tagBtns}</div>
+    ${tagWhoBlocks}
+    <div style="padding:8px 18px 0;font-size:11px;line-height:1.45;color:var(--muted)">Greenie and CTP (par 3s only): you pick the winner and each other player in the match pays them $${TAG_RULES.Greenie.amount}. Gallery rule and water: $${TAG_RULES['Gallery rule'].amount} fine on whoever you pick. It all lands in Money when you post the hole.</div>
     <button data-action="post-hole" data-match="${match.id}" class="btn btn-primary btn-block" style="margin:16px 18px 26px;width:calc(100% - 36px)">Post hole ${hole.n} &amp; advance</button>
   </div>`;
 }
@@ -565,15 +634,7 @@ function renderMoney(state) {
 
   let body;
   if (state.ui.moneyTab === 'games') {
-    const skinEvents = state.sideGameEvents.filter((e) => e.type === 'Skin').sort((a, b) => b.ts - a.ts);
-    const ctpEvents = state.sideGameEvents.filter((e) => e.type !== 'Skin').sort((a, b) => b.ts - a.ts);
-    const skinRows = skinEvents.length ? skinEvents.map((e) => `
-      <div style="display:flex;align-items:center;gap:12px;padding:10px 18px;border-bottom:1px solid var(--rule)">
-        <div style="font-size:11px;font-weight:800;color:rgba(10,16,48,.35);width:22px">${e.holeN}</div>
-        <div style="flex:1;font-size:13px;font-weight:800">${esc(PLAYERS_BY_ID[e.playerId].name)}</div>
-        <div style="font-size:11px;color:var(--muted)">won it outright</div>
-        <div style="font-size:13px;font-weight:800;color:var(--accent);width:46px;text-align:right">$${e.amount}</div>
-      </div>`).join('') : `<div style="padding:12px 18px;font-size:13px;color:var(--muted)">No skins tagged yet — tag one from a match's Score screen.</div>`;
+    const ctpEvents = state.sideGameEvents.filter((e) => TAG_RULES[e.type]).sort((a, b) => b.ts - a.ts);
     const ctpRows = ctpEvents.length ? ctpEvents.map((e) => `
       <div style="display:flex;align-items:center;gap:12px;padding:10px 18px;border-top:1px solid var(--rule)">
         <div style="font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);width:64px">${e.type}</div>
@@ -588,10 +649,9 @@ function renderMoney(state) {
           <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Side games so far</div>
           <div style="font-size:11px;color:var(--muted)">$${pot} tagged</div>
         </div>
-        <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7);margin-top:6px">Skins, CTPs and greenies get tagged from the Score screen while you play — whoever has the best net on a tagged hole wins it.</div>
+        <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7);margin-top:6px">Tag a par 3 from the Score screen while you play and pick who won the greenie or closest-to-pin. Each other player in the match pays the winner $${TAG_RULES.Greenie.amount}.</div>
       </div>
-      ${skinRows}
-      <div style="padding:16px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);border-top:2px solid var(--rule)">Closest to pin &amp; greenies</div>
+      <div style="padding:16px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Closest to pin &amp; greenies</div>
       ${ctpRows}
       <div style="height:26px"></div>`;
   } else {
@@ -606,15 +666,65 @@ function renderMoney(state) {
         <div style="font-size:16px;font-weight:800;color:${totals[p.id] > 0 ? 'var(--accent)' : totals[p.id] < 0 ? 'var(--muted)' : 'var(--ink)'};text-align:right;min-width:62px">${fmtMoney(totals[p.id])}</div>
       </div>`).join('');
     const net = Object.values(totals).reduce((a, b) => a + b, 0);
-    const moved = state.ledger.filter((e) => e.amount > 0).reduce((a, e) => a + e.amount, 0);
+    const moved = allLedger(state).filter((e) => e.amount > 0).reduce((a, e) => a + e.amount, 0);
+
+    // Team event status
+    const te = teamEventStatus(state);
+    const t1 = esc(teamNickname(state.teamOneName)), t2 = esc(teamNickname(state.teamTwoName));
+    let teHead, teText;
+    if (te.state === 'won') {
+      const w = te.winner === 'L' ? t1 : t2;
+      teHead = `${w} win the cup`;
+      teText = `Settled at $${te.stake} a man: each ${w} player collects $${te.stake}, each loser pays $${te.stake}. It's already in the balances below.`;
+    } else if (te.state === 'push') {
+      teHead = 'Tied — push';
+      teText = `${fmtPoints(te.team1)}–${fmtPoints(te.team2)} with every point in. Nobody pays on the team event.`;
+    } else {
+      teHead = `${fmtPoints(te.team1)} – ${fmtPoints(te.team2)}`;
+      teText = `$${te.stake} a man on the team event — pays out automatically when a team clinches ${fmtPoints(te.toWin)}. A 12–12 tie is a push.`;
+    }
+    const teCard = `
+      <div style="padding:14px 18px;border-bottom:2px solid var(--rule);background:var(--row-alt)">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Team event · $${te.stake} a man</div>
+          <div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">${te.state === 'open' ? 'Open' : te.state === 'push' ? 'Push' : 'Settled'}</div>
+        </div>
+        <div style="font-size:18px;font-weight:800;margin-top:4px">${teHead}</div>
+        <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7);margin-top:4px">${teText}</div>
+      </div>`;
+
+    // Recent manual entries: fines, hand-entered money, match payouts
+    const recent = state.ledger.filter((e) => !e.matchId && (e.kind === 'fine' || e.kind === 'manual' || (e.kind == null && e.amount < 0 && FINE_TYPES.includes(e.detail)))).slice().sort((a, b) => b.ts - a.ts).slice(0, 12);
+    const seenGroups = {};
+    const recentRows = recent.filter((e) => { if (!e.group) return true; if (seenGroups[e.group]) return false; seenGroups[e.group] = true; return true; }).map((e) => {
+      const grouped = e.group ? state.ledger.filter((x) => x.group === e.group) : [e];
+      const label = e.group ? esc(e.detail) : `${esc(PLAYERS_BY_ID[e.playerId].name)} · ${esc(e.detail)}`;
+      const amt = e.group ? `$${Math.abs(e.amount)} a man` : fmtMoney(e.amount);
+      return `
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 18px;border-bottom:1px solid var(--rule)">
+        <div style="flex:1;min-width:0;font-size:12px;line-height:1.35">${label}</div>
+        <div style="font-size:12px;font-weight:800;color:${!e.group && e.amount < 0 ? 'var(--muted)' : 'var(--accent)'}">${amt}</div>
+        <button data-action="remove-ledger" data-entry="${e.id}" aria-label="Remove" style="border:1px solid var(--rule);background:transparent;width:24px;height:24px;padding:0;color:var(--muted);font-size:13px;line-height:1">&times;</button>
+      </div>`;
+    }).join('');
+
+    const btn = 'flex:1;border:1px solid var(--rule);background:transparent;font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:11px 6px;color:var(--ink)';
     body = `
-      <div style="padding:14px 18px;border-bottom:2px solid var(--rule);font-size:12px;line-height:1.45;color:rgba(10,16,48,.7)">Skins, greenies, CTPs and fines net into one balance per man. Nobody pays anybody until Tobacco Road is in the books.</div>
+      ${teCard}
+      <div style="padding:14px 18px;border-bottom:2px solid var(--rule);font-size:12px;line-height:1.45;color:rgba(10,16,48,.7)">Greenies, CTPs, fines, the team event and any hand-entered money net into one balance per man.</div>
+      <div style="display:flex;gap:8px;padding:12px 18px;border-bottom:2px solid var(--rule)">
+        <button data-action="open-fines" style="${btn}">Charge a fine</button>
+        <button data-action="open-money-payout" style="${btn}">Pay out a match</button>
+        <button data-action="open-money-entry" style="${btn}">Enter money</button>
+      </div>
       ${rows}
       <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:2px solid var(--rule);background:var(--row-alt)">
         <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase">Pot in play</div>
         <div style="font-size:18px;font-weight:800">${fmtMoney(net)} net · $${moved} moved</div>
       </div>
-      <button data-action="open-fines" style="display:block;width:calc(100% - 36px);margin:16px 18px 26px;border:1px solid var(--rule);background:transparent;font-weight:800;font-size:12px;letter-spacing:.06em;text-transform:uppercase;padding:11px;text-align:left;color:var(--ink)">Charge a fine</button>`;
+      <div style="padding:16px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Fines &amp; hand-entered money</div>
+      ${recentRows || `<div style="padding:4px 18px 12px;font-size:13px;color:var(--muted)">Nothing yet — charge a fine, or enter Tobacco Road money above.</div>`}
+      <div style="height:26px"></div>`;
   }
 
   return `<div><div style="display:flex;gap:1px;background:var(--rule);border-bottom:2px solid var(--rule)">${tabs}</div>${body}</div>`;
@@ -643,6 +753,64 @@ function renderFinesModal(state) {
       </div>
     </div>
   </div>`;
+}
+
+const MONEY_LABEL = 'font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)';
+
+function renderMoneyModal(state) {
+  const kind = state.ui.moneyModal;
+  if (!kind) return '';
+  const wrap = (inner) => `
+  <div class="modal-backdrop" data-action="close-money-modal">
+    <div class="modal-sheet" data-action="noop">${inner}</div>
+  </div>`;
+  const buttons = (submit, label) => `
+      <div style="display:flex;gap:10px;margin-top:6px">
+        <button data-action="close-money-modal" class="btn btn-secondary" style="flex:1">Cancel</button>
+        <button data-action="${submit}" class="btn btn-primary" style="flex:1">${label}</button>
+      </div>`;
+
+  if (kind === 'entry') {
+    const playerOpts = PLAYERS.map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
+    return wrap(`
+      <div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Enter money</div>
+      <label style="${MONEY_LABEL}">Player
+        <select id="money-player" class="field-input" style="margin-top:4px">${playerOpts}</select>
+      </label>
+      <label style="${MONEY_LABEL}">Direction
+        <select id="money-dir" class="field-input" style="margin-top:4px"><option value="won">Won / is owed</option><option value="owed">Lost / owes</option></select>
+      </label>
+      <label style="${MONEY_LABEL}">Amount ($)
+        <input id="money-amount" class="field-input" type="number" min="1" max="10000" value="20" style="margin-top:4px">
+      </label>
+      <label style="${MONEY_LABEL}">What for
+        <input id="money-note" class="field-input" type="text" maxlength="60" placeholder="Tobacco Road side bet" style="margin-top:4px">
+      </label>
+      ${buttons('submit-money-entry', 'Add it')}`);
+  }
+
+  // payout: one row per match per winning side, Tobacco Road first
+  const opts = [];
+  state.sessions.slice().sort((a, b) => (courseFor(b).id === 'tobacco-road') - (courseFor(a).id === 'tobacco-road')).forEach((s) => {
+    const course = courseFor(s);
+    s.matches.forEach((m) => {
+      opts.push(`<option value="${m.id}|A">${esc(course.name)}: ${esc(playerNames(m.sideA))} won</option>`);
+      opts.push(`<option value="${m.id}|B">${esc(course.name)}: ${esc(playerNames(m.sideB))} won</option>`);
+    });
+  });
+  return wrap(`
+      <div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Pay out a match</div>
+      ${opts.length ? `
+      <label style="${MONEY_LABEL}">Who won
+        <select id="payout-winner" class="field-input" style="margin-top:4px">${opts.join('')}</select>
+      </label>
+      <label style="${MONEY_LABEL}">Stake per man ($)
+        <input id="payout-amount" class="field-input" type="number" min="1" max="10000" value="20" style="margin-top:4px">
+      </label>
+      <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7)">Each man on the winning side collects this; each man on the losing side pays it. For a halved match, just don't pay out.</div>
+      ${buttons('submit-money-payout', 'Pay it out')}` : `
+      <div style="font-size:13px;color:var(--muted)">No matches are set yet. Lock in a round first.</div>
+      ${buttons('close-money-modal', 'OK')}`}`);
 }
 
 // ---------- Feed ----------
@@ -713,7 +881,7 @@ function renderTeams(state) {
 
   const courseRows = COURSES.map((c) => `
     <div style="display:flex;align-items:center;gap:12px;padding:10px 18px;border-top:1px solid var(--rule)">
-      <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800">${esc(c.name)}</div><div style="font-size:11px;color:var(--muted)">${c.extra ? esc(c.note) : [`Par ${c.par}`, `${c.tees.length} tees`, c.note].filter(Boolean).map(esc).join(' · ')}</div></div>
+      <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800">${esc(c.name)}</div><div style="font-size:11px;color:var(--muted)">${[`Par ${c.par}`, `${c.tees.length} tees`, c.note].filter(Boolean).map(esc).join(' · ')}</div></div>
       <div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">${esc((state.sessions.find((s) => s.courseId === c.id) || {}).day || '')}</div>
     </div>`).join('');
 
@@ -826,7 +994,8 @@ let lastRenderedScreen = null;
 let scrollTopRequested = false;
 function requestScrollTop() { scrollTopRequested = true; }
 
-const PRESERVED_FIELDS = ['feed-input', 'trip-code-input', 'fine-player', 'fine-type', 'fine-amount', 'hcp-input'];
+const PRESERVED_FIELDS = ['feed-input', 'trip-code-input', 'fine-player', 'fine-type', 'fine-amount', 'hcp-input',
+  'money-player', 'money-dir', 'money-amount', 'money-note', 'payout-winner', 'payout-amount'];
 
 function render() {
   const state = getState();
@@ -861,6 +1030,7 @@ function render() {
       ${renderTabBar(state)}
     </div>
     ${renderFinesModal(state)}
+    ${renderMoneyModal(state)}
     ${renderHcpModal(state)}
     ${renderPhotoViewer(state)}
     ${needsWelcome ? renderWelcome(state) : ''}

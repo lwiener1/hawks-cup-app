@@ -93,6 +93,49 @@ a { color: var(--accent); }
 }
 @media (min-width: 481px) { .modal-sheet { border: 2px solid var(--ink); } }
 
+/* ---- The hammer ---------------------------------------------------------- */
+.hammer-btn {
+  position: relative; display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; min-height: 56px; padding: 10px 12px;
+  background: var(--accent); color: #fff; border: 0; border-bottom: 5px solid var(--accent-press);
+  font-weight: 800; font-size: 14px; letter-spacing: .08em; text-transform: uppercase; line-height: 1.1;
+  transition: transform .08s ease, border-bottom-width .08s ease;
+}
+.hammer-btn:active { transform: translateY(3px); border-bottom-width: 2px; }
+.hammer-btn.silver { background: var(--team2); border-bottom-color: var(--team2-text); }
+.hammer-btn .hammer-ico {
+  flex: none; width: 28px; height: 28px; transform: rotate(-42deg); transform-origin: 30% 92%;
+  transition: transform .14s cubic-bezier(.2, 1.7, .4, 1);
+}
+.hammer-btn:active .hammer-ico { transform: rotate(28deg); }
+.hammer-btn .mult {
+  flex: none; background: #fff; color: var(--accent); font-size: 13px; letter-spacing: 0;
+  padding: 3px 7px; min-width: 30px; text-align: center;
+}
+.hammer-btn.silver .mult { color: var(--team2-text); }
+.hammer-live { animation: hammer-pulse 1.5s ease-in-out infinite; }
+@keyframes hammer-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(11, 26, 90, .5); }
+  50% { box-shadow: 0 0 0 8px rgba(11, 26, 90, 0); }
+}
+.hammer-banner {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  background: var(--accent); color: #fff; font-size: 13px; line-height: 1.4;
+}
+.hammer-banner .hammer-ico { flex: none; width: 30px; height: 30px; transform: rotate(-40deg); transform-origin: 30% 92%; }
+.hammer-swing .hammer-ico { animation: hammer-swing .55s ease-out; }
+@keyframes hammer-swing {
+  0% { transform: rotate(-70deg); } 40% { transform: rotate(32deg); }
+  65% { transform: rotate(-24deg); } 100% { transform: rotate(-40deg); }
+}
+.hammer-value { display: flex; align-items: baseline; gap: 6px; font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.hammer-value strong { font-size: 22px; letter-spacing: -.02em; color: var(--ink); line-height: 1; }
+.hammer-value.hot strong { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) {
+  .hammer-live, .hammer-swing .hammer-ico { animation: none; }
+  .hammer-btn, .hammer-btn .hammer-ico { transition: none; }
+}
+
 .photo-view {
   position: fixed; inset: 0; z-index: 80; background: #000;
   display: flex; flex-direction: column;

@@ -127,21 +127,26 @@ function cardView(state, match, course) {
   const defaultIdx = Math.min(course.holes.length - 1, results.length);
   const holeIdx = d && d.holeIdx != null ? d.holeIdx : defaultIdx;
   const hole = course.holes[holeIdx];
-  let gross = {}, tags = [];
+  let gross = {}, tags = [], hammer = [], who = {};
   if (d && d.holeN === hole.n) {
-    gross = d.gross; tags = d.tags;
+    gross = d.gross; tags = d.tags; hammer = d.hammer || []; who = d.who || {};
   } else {
+    const hw = match.holeWho && match.holeWho[hole.n];
+    if (hw) Object.keys(hw).forEach((t) => { who[t] = hw[t].slice(); });
     match.sideA.concat(match.sideB).forEach((id) => {
       gross[id] = (match.grossScores[id] && match.grossScores[id][hole.n]) || hole.par;
     });
     tags = (match.holeTags && match.holeTags[hole.n]) ? match.holeTags[hole.n].slice() : [];
+    const hh = match.holeHammer && match.holeHammer[hole.n];
+    hammer = hh && hh.events ? hh.events.map((e) => Object.assign({}, e)) : [];
   }
-  return { holeIdx, hole, gross, tags, results };
+  return { holeIdx, hole, gross, tags, hammer, who, results };
 }
 
 function writeDraft(state, match, course, mutate) {
   const v = cardView(state, match, course);
-  const d = { holeIdx: v.holeIdx, holeN: v.hole.n, gross: Object.assign({}, v.gross), tags: v.tags.slice() };
+  const d = { holeIdx: v.holeIdx, holeN: v.hole.n, gross: Object.assign({}, v.gross), tags: v.tags.slice(), hammer: v.hammer.map((e) => Object.assign({}, e)), who: {} };
+  Object.keys(v.who).forEach((t) => { d.who[t] = v.who[t].slice(); });
   mutate(d);
   state.ui.drafts = state.ui.drafts || {};
   state.ui.drafts[match.id] = d;
@@ -162,15 +167,66 @@ function toggleTag(matchId, tag) {
     const match = matchById(matchId);
     const course = courseFor(sessionForMatch(matchId));
     writeDraft(state, match, course, (d) => {
+      if (!tagsForHole(course.holes.find((h) => h.n === d.holeN)).includes(tag)) return;
       const i = d.tags.indexOf(tag);
-      if (i > -1) d.tags.splice(i, 1); else d.tags.push(tag);
+      if (i > -1) { d.tags.splice(i, 1); delete d.who[tag]; } else d.tags.push(tag);
+    });
+  });
+}
+
+// Name the player a Greenie / CTP pays, or the player(s) a penalty tag fines.
+function toggleTagWho(matchId, tag, playerId) {
+  const rule = TAG_RULES[tag];
+  if (!rule) return;
+  update((state) => {
+    const match = matchById(matchId);
+    const course = courseFor(sessionForMatch(matchId));
+    writeDraft(state, match, course, (d) => {
+      const cur = d.who[tag] || [];
+      const has = cur.includes(playerId);
+      if (rule.mode === 'pick') d.who[tag] = has ? [] : [playerId];          // one winner
+      else d.who[tag] = has ? cur.filter((x) => x !== playerId) : cur.concat(playerId);   // can be several
+    });
+  });
+}
+
+// ---- hammer (Fourball + hammer format) ---------------------------------------
+// Throws live in the per-phone draft for the hole and are committed with the
+// hole when it is posted, just like the strokes.
+
+function throwHammer(matchId, by) {
+  update((state) => {
+    const match = matchById(matchId);
+    const course = courseFor(sessionForMatch(matchId));
+    if (!canThrowHammer(cardView(state, match, course).hammer, by)) return;
+    writeDraft(state, match, course, (d) => { d.hammer.push({ by, resp: null }); });
+  });
+}
+
+function answerHammer(matchId, resp) {
+  update((state) => {
+    const match = matchById(matchId);
+    const course = courseFor(sessionForMatch(matchId));
+    if (!hammerOutcome(cardView(state, match, course).hammer).pending) return;
+    writeDraft(state, match, course, (d) => { d.hammer[d.hammer.length - 1].resp = resp; });
+  });
+}
+
+function undoHammer(matchId) {
+  update((state) => {
+    const match = matchById(matchId);
+    const course = courseFor(sessionForMatch(matchId));
+    writeDraft(state, match, course, (d) => {
+      const last = d.hammer[d.hammer.length - 1];
+      if (!last) return;
+      if (last.resp != null) last.resp = null; else d.hammer.pop();   // un-answer first, then un-throw
     });
   });
 }
 
 function setViewedHole(state, matchId, idx) {
   state.ui.drafts = state.ui.drafts || {};
-  state.ui.drafts[matchId] = { holeIdx: idx, holeN: null, gross: {}, tags: [] };
+  state.ui.drafts[matchId] = { holeIdx: idx, holeN: null, gross: {}, tags: [], who: {} };
 }
 
 function goToHole(matchId, holeIdx) {
@@ -186,8 +242,6 @@ function stepHole(matchId, delta) {
   });
 }
 
-const TAG_AMOUNTS = { Skin: 20, Greenie: 10, CTP: 40 };
-
 function postHoleAndAdvance(matchId) {
   update((state) => {
     const match = matchById(matchId);
@@ -195,30 +249,51 @@ function postHoleAndAdvance(matchId) {
     const course = courseFor(session);
     const v = cardView(state, match, course);
     const hole = v.hole;
+    if (hammerOutcome(v.hammer).pending) {
+      showNotice('The hammer is still waiting for an answer: take it or fold before posting the hole.');
+      return;
+    }
 
     const ids = match.sideA.concat(match.sideB);
-    const strokes = handicapAllocation(ids, session);
     ids.forEach((id) => {
       match.grossScores[id] = match.grossScores[id] || {};
       match.grossScores[id][hole.n] = v.gross[id];
     });
     match.holeTags = match.holeTags || {};
+    const allowed = tagsForHole(hole);
+    v.tags = v.tags.filter((t) => allowed.includes(t));
     match.holeTags[hole.n] = v.tags.slice();
+    match.holeWho = match.holeWho || {};
+    const whoNow = {};
+    v.tags.forEach((t) => { if (v.who[t] && v.who[t].length) whoNow[t] = v.who[t].slice(); });
+    if (Object.keys(whoNow).length) match.holeWho[hole.n] = whoNow; else delete match.holeWho[hole.n];
+    match.holeHammer = match.holeHammer || {};
+    if (v.hammer.length) match.holeHammer[hole.n] = { events: v.hammer.map((e) => ({ by: e.by, resp: e.resp })) };
+    else delete match.holeHammer[hole.n];
 
     state.sideGameEvents = state.sideGameEvents.filter((e) => !(e.matchId === matchId && e.holeN === hole.n));
     state.ledger = state.ledger.filter((e) => !(e.matchId === matchId && e.holeN === hole.n));
-    let bestId = ids[0], bestNet = Infinity, tie = false;
-    ids.forEach((id) => {
-      const net = netScore(v.gross[id], strokes[id], hole.si);
-      if (net < bestNet) { bestNet = net; bestId = id; tie = false; }
-      else if (net === bestNet) tie = true;
-    });
     v.tags.forEach((tag) => {
-      if (TAG_AMOUNTS[tag] && !tie) {
-        const detail = `${tag} ${ordinal(hole.n)}`;
-        const ts = Date.now();
-        state.sideGameEvents.push({ id: uid('sge'), matchId, sessionId: session.id, holeN: hole.n, type: tag, playerId: bestId, amount: TAG_AMOUNTS[tag], detail, ts });
-        state.ledger.push({ id: uid('ldg'), matchId, holeN: hole.n, playerId: bestId, amount: TAG_AMOUNTS[tag], detail, ts });
+      const rule = TAG_RULES[tag];
+      if (!rule) return;
+      const detail = `${tag} ${ordinal(hole.n)}`;
+      const ts = Date.now();
+      if (rule.mode === 'pick') {
+        // rule.amount is what EACH other player in the match pays the winner,
+        // so in a 2v2 the winner collects three times it.
+        (whoNow[tag] || []).forEach((pid) => {
+          const payers = ids.filter((id) => id !== pid);
+          const total = rule.amount * payers.length;
+          state.sideGameEvents.push({ id: uid('sge'), matchId, sessionId: session.id, holeN: hole.n, type: tag, playerId: pid, amount: total, detail, ts });
+          state.ledger.push({ id: uid('ldg'), matchId, holeN: hole.n, playerId: pid, amount: total, detail, ts });
+          payers.forEach((id) => {
+            state.ledger.push({ id: uid('ldg'), matchId, holeN: hole.n, playerId: id, amount: -rule.amount, detail: `${detail} (${PLAYERS_BY_ID[pid].name} won)`, ts });
+          });
+        });
+      } else {
+        (whoNow[tag] || []).forEach((pid) => {
+          state.ledger.push({ id: uid('ldg'), kind: 'fine', matchId, holeN: hole.n, playerId: pid, amount: -rule.amount, detail: `${rule.fine} ${ordinal(hole.n)}`, ts });
+        });
       }
     });
 
@@ -227,6 +302,10 @@ function postHoleAndAdvance(matchId) {
     const label = matchStateLabel(results, course.holes.length, nickA, nickB, maxPerHole(match.format));
     const shortA = playerNames(match.sideA), shortB = playerNames(match.sideB);
     const nassau = label.segments.map((s) => `${s.label} ${s.text}`).join(' · ');
+    const hh = hammerOutcome(v.hammer);
+    const hammerNote = !v.hammer.length ? '' : hh.folded
+      ? ` Hammer on ${hole.n}: folded, ${hh.folded === 'A' ? shortA : shortB} take the hole.`
+      : hh.mult > 1 ? ` Hammer on ${hole.n}: the hole was worth ×${hh.mult}.` : '';
     let text;
     if (label.done) {
       text = `${shortA} vs ${shortB} is final — ${nassau}.`;
@@ -235,7 +314,7 @@ function postHoleAndAdvance(matchId) {
     } else {
       text = `${shortA} vs ${shortB}, through ${results.length}: ${nassau}.`;
     }
-    state.feed.unshift({ id: uid('fd'), author: 'Hawks Cup', isSystem: true, text, ts: Date.now() });
+    state.feed.unshift({ id: uid('fd'), author: 'Hawks Cup', isSystem: true, text: text + hammerNote, ts: Date.now() });
 
     setViewedHole(state, matchId, Math.min(course.holes.length - 1, v.holeIdx + 1));
     requestScrollTop();
@@ -243,6 +322,7 @@ function postHoleAndAdvance(matchId) {
 }
 
 // ---- money / feed ----------------------------------------------------------
+
 
 function pickMoneyTab(tab) {
   update((state) => { state.ui.moneyTab = tab; });
@@ -266,8 +346,60 @@ function closeFines() {
 }
 function chargeFine(playerId, fineType, amount) {
   update((state) => {
-    state.ledger.push({ id: uid('ldg'), playerId, amount: -Math.abs(amount), detail: fineType, ts: Date.now() });
+    state.ledger.push({ id: uid('ldg'), kind: 'fine', playerId, amount: -Math.abs(amount), detail: fineType, ts: Date.now() });
     state.ui.finesOpen = false;
+  });
+}
+
+// ---- manual money -------------------------------------------------------------
+// For anything the app doesn't work out itself (Tobacco Road stakes, side
+// bets, corrections). Whole dollars only.
+
+function openMoneyModal(kind) {
+  update((state) => { state.ui.moneyModal = kind; });
+}
+function closeMoneyModal() {
+  update((state) => { state.ui.moneyModal = null; });
+}
+
+function addMoneyEntry(playerId, direction, amount, note) {
+  const amt = Math.round(Math.abs(Number(amount)));
+  if (!amt) return;
+  update((state) => {
+    state.ledger.push({
+      id: uid('ldg'), kind: 'manual', playerId, amount: direction === 'won' ? amt : -amt,
+      detail: (note || '').trim() || (direction === 'won' ? 'Money won' : 'Money owed'), ts: Date.now(),
+    });
+    state.ui.moneyModal = null;
+  });
+}
+
+// One tap for a finished 2v2 (or singles) match: every player on the winning
+// side collects `perPerson`, every player on the losing side pays it.
+function payoutMatch(matchId, winnerSide, perPerson) {
+  const amt = Math.round(Math.abs(Number(perPerson)));
+  if (!amt) return;
+  update((state) => {
+    const match = matchById(matchId);
+    const course = courseFor(sessionForMatch(matchId));
+    const winners = winnerSide === 'A' ? match.sideA : match.sideB;
+    const losers = winnerSide === 'A' ? match.sideB : match.sideA;
+    const group = uid('grp'), ts = Date.now();
+    const detail = `${course.name}: ${playerNames(winners)} beat ${playerNames(losers)}`;
+    winners.forEach((id) => state.ledger.push({ id: uid('ldg'), kind: 'manual', group, playerId: id, amount: amt, detail, ts }));
+    losers.forEach((id) => state.ledger.push({ id: uid('ldg'), kind: 'manual', group, playerId: id, amount: -amt, detail, ts }));
+    state.feed.unshift({ id: uid('fd'), author: 'Hawks Cup', isSystem: true, ts, text: `${detail} — $${amt} a man.` });
+    state.ui.moneyModal = null;
+  });
+}
+
+// Remove a fine / manual entry (or a whole match payout). Greenies and
+// closest-to-pin belong to the hole they were tagged on and are undone there.
+function removeLedgerEntry(entryId) {
+  update((state) => {
+    const e = state.ledger.find((x) => x.id === entryId);
+    if (!e || e.matchId) return;
+    state.ledger = e.group ? state.ledger.filter((x) => x.group !== e.group) : state.ledger.filter((x) => x.id !== entryId);
   });
 }
 

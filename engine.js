@@ -77,7 +77,50 @@ function netScore(gross, strokesReceived, si) {
 
 // ---- single hole -------------------------------------------------------------
 
-function maxPerHole(format) { return format === 'lowhigh' ? 2 : 1; }
+// The most one hole can swing a bet. With the hammer there is no limit (each
+// throw doubles the hole), so a bet is only settled once its nine is played.
+function maxPerHole(format) {
+  if (format === 'lowhigh') return 2;
+  if (format === 'fourballhammer') return Infinity;
+  return 1;
+}
+
+// ---- hammer -----------------------------------------------------------------------
+// Fourball + hammer: during a hole either side may "throw the hammer". The
+// other side must TAKE it (the hole's value doubles and the hammer passes to
+// them, so they can throw it back) or FOLD (the thrower wins the hole at its
+// current value). A hole is therefore worth 1, 2, 4, 8... Events for one hole
+// are [{ by: 'A'|'B', resp: 'accept'|'fold'|null }] in order; resp null means
+// the throw is still waiting for an answer.
+
+function isHammerGame(match) { return match.format === 'fourballhammer'; }
+
+function otherSide(side) { return side === 'A' ? 'B' : 'A'; }
+
+function hammerOutcome(events) {
+  let mult = 1, holder = null, pending = null, folded = null;
+  for (const e of events || []) {
+    if (e.resp == null) { pending = e.by; break; }
+    if (e.resp === 'accept') { mult *= 2; holder = otherSide(e.by); continue; }
+    folded = e.by;   // the thrower wins the hole at the value before this throw
+    break;
+  }
+  return { mult, holder, pending, folded };
+}
+
+function canThrowHammer(events, by) {
+  const h = hammerOutcome(events);
+  return !h.pending && !h.folded && (h.holder == null || h.holder === by);
+}
+
+// Hole result (positive = side A) after the hammer: a fold hands the hole to
+// the thrower at the current value; otherwise the normal result is multiplied.
+function applyHammer(baseResult, events) {
+  if (!events || !events.length) return baseResult;
+  const h = hammerOutcome(events);
+  if (h.folded) return (h.folded === 'A' ? 1 : -1) * h.mult;
+  return baseResult * h.mult;
+}
 
 const sign = (n) => (n > 0 ? 1 : n < 0 ? -1 : 0);
 
@@ -111,7 +154,8 @@ function computeHoleResults(match, holes) {
     if (!ids.every((id) => match.grossScores[id] && match.grossScores[id][hole.n] != null)) break;
     const gross = {};
     ids.forEach((id) => { gross[id] = match.grossScores[id][hole.n]; });
-    results.push(holeBreakdown(match, hole, gross).result);
+    const hh = match.holeHammer && match.holeHammer[hole.n];
+    results.push(applyHammer(holeBreakdown(match, hole, gross).result, hh && hh.events));
   }
   return results;
 }
@@ -200,10 +244,10 @@ function matchPointShares(holeResults, totalHoles, maxPer) {
 
 function courseFor(session) { return COURSES_BY_ID[session.courseId]; }
 
-// Does this round count toward the team event? Old saved trips without the
-// flag fall back to "everything except the extra course".
+// Does this round count toward the team event? (Old saved trips without the
+// flag count it.)
 function sessionCounts(session) {
-  return session.counts !== undefined ? !!session.counts : !courseFor(session).extra;
+  return session.counts !== undefined ? !!session.counts : true;
 }
 
 function plannedMatches(session) {
@@ -241,7 +285,7 @@ function sessionPoints(session) {
 }
 
 function cupTotals(sessions) {
-  let team1 = 0, team2 = 0, settled = 0, available = 0;
+  let team1 = 0, team2 = 0, settled = 0, settled1 = 0, settled2 = 0, available = 0;
   sessions.forEach((s) => {
     available += sessionPointValue(s);
     if (!sessionCounts(s)) return;
@@ -250,10 +294,11 @@ function cupTotals(sessions) {
       const sh = matchPointShares(matchResults(m, course), course.holes.length, maxPerHole(m.format));
       team1 += sh.a; team2 += sh.b;
       settled += sh.settledA + sh.settledB;
+      settled1 += sh.settledA; settled2 += sh.settledB;
     });
   });
   // Win line: more than half of the points on offer (24 -> 12.5).
-  return { team1, team2, settled, available, toWin: available / 2 + 0.5 };
+  return { team1, team2, settled, settled1, settled2, available, toWin: available / 2 + 0.5 };
 }
 
 function fmtPoints(n) {

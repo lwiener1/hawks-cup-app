@@ -1,6 +1,10 @@
 // Static reference data: players, courses/holes, game types.
 // Edit here to re-cast the trip for a different group/venue.
 
+// Team event stake: every player on the losing team pays this to a player on
+// the winning team. A tie is a push.
+const TEAM_EVENT_STAKE = 200;
+
 const TEAM_ONE_NAME = 'The LAWDs';
 const TEAM_TWO_NAME = 'The Prince’s Court Jesters';
 
@@ -46,7 +50,7 @@ function tee(id, name, rating, slope, yards, total, par) {
 
 const COURSES = [
   {
-    id: 'southern-pines', name: 'Southern Pines', extra: false, note: '', par: 71, defaultTee: 'white',
+    id: 'southern-pines', name: 'Southern Pines', note: '', par: 71, defaultTee: 'white',
     holes: holesOf(
       [4, 5, 3, 4, 5, 4, 3, 4, 3, 4, 4, 4, 4, 3, 5, 4, 4, 4],
       [11, 7, 13, 3, 5, 1, 17, 9, 15, 10, 14, 2, 8, 18, 6, 16, 4, 12]
@@ -60,7 +64,7 @@ const COURSES = [
     ],
   },
   {
-    id: 'mid-pines', name: 'Mid Pines', extra: false, note: 'Ross, 1921', par: 72, defaultTee: 'regular',
+    id: 'mid-pines', name: 'Mid Pines', note: 'Ross, 1921', par: 72, defaultTee: 'regular',
     holes: holesOf(
       [4, 3, 4, 4, 5, 5, 4, 3, 4, 5, 3, 4, 3, 4, 5, 4, 4, 4],
       [5, 15, 7, 13, 9, 1, 3, 17, 11, 2, 18, 8, 10, 16, 12, 6, 14, 4]
@@ -75,7 +79,7 @@ const COURSES = [
     ],
   },
   {
-    id: 'pine-needles', name: 'Pine Needles', extra: false, note: 'US Women’s Open venue', par: 71, defaultTee: 'ross',
+    id: 'pine-needles', name: 'Pine Needles', note: 'US Women’s Open venue', par: 71, defaultTee: 'ross',
     holes: holesOf(
       [5, 4, 3, 4, 3, 4, 4, 4, 4, 5, 4, 4, 3, 4, 5, 3, 4, 4],
       [11, 5, 17, 9, 7, 1, 3, 15, 13, 4, 12, 14, 16, 2, 6, 18, 8, 10]
@@ -89,7 +93,7 @@ const COURSES = [
     ],
   },
   {
-    id: 'tobacco-road', name: 'Tobacco Road', extra: false, note: 'Strantz, blind everything', par: 71, defaultTee: 'ripper',
+    id: 'tobacco-road', name: 'Tobacco Road', note: 'Strantz, blind everything', par: 71, defaultTee: 'ripper',
     holes: holesOf(
       [5, 4, 3, 5, 4, 3, 4, 3, 4, 4, 5, 4, 5, 3, 4, 4, 3, 4],
       [3, 11, 17, 9, 15, 13, 7, 5, 1, 6, 10, 14, 2, 8, 12, 16, 18, 4]
@@ -104,48 +108,52 @@ const COURSES = [
       tee('cultivator', 'Cultivator', 62.6, 117, [315, 280, 91, 368, 297, 107, 248, 132, 269, 242, 290, 291, 429, 96, 267, 248, 84, 242], null, 70),
     ],
   },
-  {
-    // New par-3 course at Tobacco Road (opened Aug 2026): 12 holes, 40-105 yds.
-    // No hole-by-hole card or rating is published yet, so there is one
-    // "Standard" tee rated at par / slope 113 (course handicap = index) and SI
-    // follows hole order. Replace with the real card when you have it.
-    id: 'the-matchbox', name: 'The Matchbox', extra: true, note: '12 par 3s, 40–105 yds', par: 36, defaultTee: 'standard',
-    holes: holesOf(
-      [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-    ),
-    tees: [{ id: 'standard', name: 'Standard', rating: 36, slope: 113, yards: null, total: null }],
-  },
 ];
 
 
 const COURSES_BY_ID = {};
 COURSES.forEach((c) => { COURSES_BY_ID[c.id] = c; });
 
-const CUP_COURSES = COURSES.filter((c) => !c.extra);
-const EXTRA_COURSES = COURSES.filter((c) => c.extra);
 
 // shape: 'team' (2v2) or 'singles' (1v1). Every format is played as a Nassau.
 const GAMES = [
   { id: 'fourball', name: 'Fourball', note: 'best net ball', shape: 'team' },
+  { id: 'fourballhammer', name: 'Fourball + hammer', note: 'best net ball, throw the hammer', shape: 'team' },
   { id: 'lowhigh', name: 'Low ball / high ball', note: '2 pts a hole, net', shape: 'team' },
   { id: 'singles', name: 'Match play', note: 'net, man on man', shape: 'singles' },
 ];
 const GAMES_BY_ID = {};
 GAMES.forEach((g) => { GAMES_BY_ID[g.id] = g; });
 // Formats from earlier saved trips still render (scored as best net ball).
-GAMES_BY_ID.foursomes = { id: 'foursomes', name: 'Foursomes', note: '', shape: 'team' };
+GAMES_BY_ID.fourballpress = { id: 'fourballpress', name: 'Fourball', note: '', shape: 'team' };   // retired press format
+GAMES_BY_ID.foursomes ={ id: 'foursomes', name: 'Foursomes', note: '', shape: 'team' };
 GAMES_BY_ID.scramble = { id: 'scramble', name: 'Scramble', note: '', shape: 'team' };
 GAMES_BY_ID.netteam = { id: 'netteam', name: 'Net stroke', note: '', shape: 'team' };
 GAMES_BY_ID.netsingles = { id: 'netsingles', name: 'Net stroke', note: '', shape: 'singles' };
 function gameFor(session) { return GAMES_BY_ID[session.format] || GAMES[0]; }
 
-const TAG_TYPES = ['Skin', 'Greenie', 'CTP', '3-putt', 'Lost ball', 'In the water'];
+const TAG_TYPES = ['Greenie', 'CTP', 'Gallery rule', 'In the water'];
+
+// Tags that can be used on this hole (greenies and CTPs are par 3 only).
+function tagsForHole(hole) {
+  return TAG_TYPES.filter((t) => !TAG_RULES[t].par3 || hole.par === 3);
+}
 
 const FINE_TYPES = [
-  'Lip-out sulk', 'Three-putt', 'Lost ball', 'Late to the tee', 'Air-mailed the green',
-  'Whiff', 'Sandbagging confession', 'Phone in the bag',
+  'Lip-out sulk', 'Gallery rule', 'Late to the tee', 'Air-mailed the green',
+  'Whiff', 'Sandbagging confession', 'Lost a club', 'In the water',
 ];
+
+// How each hole tag works. 'pick' pays whoever you name (closest to the pin /
+// on the green isn't something scores can tell us); 'fine' charges whoever
+// you name.
+const TAG_RULES = {
+  // 'pick' amounts are paid by EACH other player in the match to the winner.
+  'Greenie':      { mode: 'pick', amount: 5, par3: true, ask: 'Who got the greenie?' },
+  'CTP':          { mode: 'pick', amount: 5, par3: true, ask: 'Who was closest to the pin?' },
+  'Gallery rule': { mode: 'fine', amount: 5, fine: 'Gallery rule', ask: 'Who broke the gallery rule?' },
+  'In the water': { mode: 'fine', amount: 5, fine: 'In the water', ask: 'Who went in the water?' },
+};
 
 // Logo palette (keep in step with the CSS variables in styles.css).
 const TEAM1_COLOR = '#0b1a5a';      // navy

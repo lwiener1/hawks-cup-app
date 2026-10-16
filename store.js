@@ -12,7 +12,7 @@ function uid(prefix) { return prefix + '_' + Math.random().toString(36).slice(2,
 function defaultUi() {
   return {
     screen: 'cup', moneyTab: 'games', setupSessionId: 's3', cardMatchId: null,
-    finesOpen: false, drafts: {}, me: null, tripCode: null, hcpEditPlayer: null,
+    finesOpen: false, moneyModal: null, drafts: {}, me: null, tripCode: null, hcpEditPlayer: null,
     verifySessionId: null, viewPhotoId: null, photoZoom: 1, cardFrom: 'rounds',
   };
 }
@@ -40,7 +40,7 @@ function linkSession(session) {
 }
 
 function makeMatch(sideA, sideB, id, format) {
-  return { id: id || uid('match'), sideA, sideB, format: format || 'fourball', grossScores: {}, scorer: sideA[0], holeTags: {} };
+  return { id: id || uid('match'), sideA, sideB, format: format || 'fourball', grossScores: {}, scorer: sideA[0], holeTags: {}, holeHammer: {} };
 }
 
 // Bakes a fixed sequence of hole results (-1/0/1) into a match's gross
@@ -75,9 +75,8 @@ function buildSessions() {
   // The 2026 trip, in playing order. Every match is a Nassau (3 points).
   // Team event = Southern Pines fourball (2 matches) + Mid Pines low/high
   // ball (2) + Pine Needles singles (4) = 8 matches x 3 = 24 points, 12.5
-  // wins. The Matchbox and Tobacco Road are played but don't count.
+  // wins. Tobacco Road is played but doesn't count.
   const cfg = [
-    { id: 'sx', n: '+', day: 'Thu 11/5', courseId: 'the-matchbox', format: 'fourball', shape: 'team', counts: false, tee: 'Tee time TBD' },
     { id: 's1', n: 1, day: 'Fri 11/6 AM', courseId: 'southern-pines', format: 'fourball', shape: 'team', counts: true, tee: 'Tee time TBD' },
     { id: 's2', n: 2, day: 'Fri 11/6 PM', courseId: 'mid-pines', format: 'lowhigh', shape: 'team', counts: true, tee: 'Tee time TBD' },
     { id: 's3', n: 3, day: 'Sat 11/7', courseId: 'pine-needles', format: 'singles', shape: 'singles', counts: true, tee: 'Tee time TBD' },
@@ -129,17 +128,17 @@ function seedState(ui) {
 
   const now = Date.now();
   const ledgerRows = [
-    ['david', 40, 'Skin 6th', 3600e3], ['david', 20, 'CTP miss carry', 3500e3],
+    ['david', 20, 'CTP 6th', 3500e3],
     ['lenny', 10, 'Greenie 12th', 3000e3], ['lenny', -30, 'Two fines', 2900e3],
-    ['alex', 40, 'CTP 3rd', 2000e3], ['dan', 20, 'Skin 4th', 1900e3], ['dan', -10, '3-putt fine', 1800e3],
-    ['tom', 40, 'CTP 12th', 1500e3], ['ben', 10, 'Greenie 7th', 1200e3], ['ben', -40, 'Lost ball x2 fine', 1100e3],
-    ['ryan', 20, 'Skin 1st', 900e3], ['jamey', -70, 'Four fines', 600e3], ['jamey', -40, 'Pot contribution', 500e3],
+    ['alex', 40, 'CTP 3rd', 2000e3], ['dan', -10, 'Lip-out sulk', 1800e3],
+    ['tom', 40, 'CTP 12th', 1500e3], ['ben', 10, 'Greenie 7th', 1200e3], ['ben', -40, 'Gallery rule x2', 1100e3],
+    ['jamey', -70, 'Four fines', 600e3], ['jamey', -40, 'Pot contribution', 500e3],
   ];
   state.ledger = ledgerRows.map((r, i) => ({ id: 'seed' + i, playerId: r[0], amount: r[1], detail: r[2], ts: now - r[3] }));
 
   const feedRows = [
     ['Hawks Cup', true, 'David & Dan go 2 UP — Dan nets a 4 on the 8th with a shot.', 60e3],
-    ['Tom', false, 'Three skins riding on 13. Somebody hole something.', 240e3],
+    ['Tom', false, 'Closest to the pin on 13 is $15. Somebody hit it.', 240e3],
     ['Lenny', false, 'Greenie on 12 and a two-putt. Paid for lunch.', 660e3],
     ['Hawks Cup', true, 'Jesters take the 10th — match 2 back to 1 UP.', 1560e3],
     ['Jamey', false, 'Fined again for the lip-out sulk. Ledger is a crime scene.', 2880e3],
@@ -192,7 +191,9 @@ function assembleState(docs, ui) {
     const d = docs[key];
     if (key.indexOf('photo_') === 0) photos.push(d);
     else if (key.indexOf('hcp_') === 0) handicaps[d.id] = d.hcp;
-    else if (key.indexOf('session_') === 0) sessions.push(d);
+    // A round at a course the app no longer has (e.g. the removed Matchbox)
+    // is dropped; the next sync then deletes it from the shared trip too.
+    else if (key.indexOf('session_') === 0) { if (COURSES_BY_ID[d.courseId]) sessions.push(d); }
     else if (key.indexOf('match_') === 0) (matchesBySession[d.sessionId] = matchesBySession[d.sessionId] || []).push(d);
     else if (key.indexOf('ledger_') === 0) ledger.push(d);
     else if (key.indexOf('feed_') === 0) feed.push(d);
@@ -227,6 +228,7 @@ function loadState() {
     const parsed = JSON.parse(raw);
     if (!parsed || !Array.isArray(parsed.sessions)) return null;
     parsed.ui = Object.assign(defaultUi(), parsed.ui);
+    parsed.sessions = parsed.sessions.filter((s) => COURSES_BY_ID[s.courseId]);
     parsed.handicaps = parsed.handicaps || {};
     parsed.photos = parsed.photos || [];
     return parsed;
