@@ -456,6 +456,13 @@ function applyTripCode(rawCode) {
   startSync();
 }
 
+// Leave this trip on this phone only: back to the welcome screen to type a
+// code and pick a player. Nothing is changed for anyone else.
+function changeTripCode() {
+  applyTripCode('');
+  update((state) => { state.ui.me = null; });
+}
+
 function resetTrip(kind) {
   const oldPhotoIds = getState().photos.map((p) => p.id);
   update((state) => {

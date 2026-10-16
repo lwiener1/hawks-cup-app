@@ -902,6 +902,7 @@ function renderTripSettings(state) {
     <div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">This phone</div>
     <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7)">Playing as <strong>${esc(myName(state))}</strong>${code ? ` &middot; trip code <strong>${esc(code)}</strong>` : syncAvailable() ? '' : ' &middot; saving on this phone only'}.</div>
     <button data-action="forget-me" style="${btn}">Not you? Switch player</button>
+    ${syncAvailable() ? `<button data-action="change-code" style="${btn}">Change trip code (re-enter)</button>` : ''}
     ${code ? `<button data-action="share-invite" style="${btn}">Copy invite link for the group</button>` : ''}
     <button data-action="reset-trip" data-kind="fresh" style="${btn};color:var(--accent);border-color:var(--accent)">Clear everything &amp; start the trip</button>
     <button data-action="reset-trip" data-kind="sample" style="${btn}">Load the sample trip</button>

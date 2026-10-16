@@ -102,6 +102,9 @@ document.addEventListener('click', (ev) => {
     }
     case 'clear-verified': clearVerified(a.session); break;
     case 'forget-me': forgetMe(); break;
+    case 'change-code':
+      if (confirm('Leave this trip on this phone and enter a trip code again? Nothing is deleted for anyone else.')) changeTripCode();
+      break;
     case 'share-invite': {
       const link = inviteLink();
       const done = () => alert('Invite link copied. Text it to the group:\n\n' + link);
