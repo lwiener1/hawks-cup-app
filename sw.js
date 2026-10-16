@@ -2,7 +2,7 @@
 // offline cache handle that) — this only keeps the app itself loadable with
 // no signal. Same-origin files are network-first so a redeploy shows up on
 // the next open instead of one load later; the Firebase SDK is cache-first.
-const CACHE = 'hawks-cup-v17';
+const CACHE = 'hawks-cup-v18';
 const ASSETS = [
   './', './index.html', './styles.css', './firebase-config.js',
   './data.js', './engine.js', './store.js', './derive.js', './sync.js', './photos.js',
@@ -38,8 +38,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // 'no-cache' makes the browser check with the server on every open (a quick
+  // 304 when nothing changed) instead of trusting GitHub Pages' 10-minute
+  // cache, so a redeploy shows up on the very next launch.
   event.respondWith(
-    fetch(req).then((res) => {
+    fetch(req, { cache: 'no-cache' }).then((res) => {
       if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
       return res;
     }).catch(() => caches.match(req).then((cached) => cached || caches.match('./index.html')))
