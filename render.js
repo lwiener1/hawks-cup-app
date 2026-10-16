@@ -52,8 +52,10 @@ function moneyMovedLabel(state) {
 function renderHeader(state) {
   const info = headerInfo(state);
   const showBack = ['card', 'setup', 'trophy', 'verify'].includes(state.ui.screen);
-  return `
-  <div style="flex:none;padding:env(safe-area-inset-top,20px) 18px 10px;border-bottom:2px solid var(--rule);display:flex;align-items:flex-end;gap:10px;background:var(--bg)">
+  const practiceBar = isPractice(state)
+    ? `<div style="flex:none;background:var(--accent);color:#fff;text-align:center;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;padding:calc(env(safe-area-inset-top,0px) + 5px) 10px 5px">Practice mode &middot; nothing here counts</div>` : '';
+  return `${practiceBar}
+  <div style="flex:none;padding:${practiceBar ? '10px' : 'env(safe-area-inset-top,20px)'} 18px 10px;border-bottom:2px solid var(--rule);display:flex;align-items:flex-end;gap:10px;background:var(--bg)">
     <button data-action="go-back" style="display:${showBack ? 'flex' : 'none'};align-items:center;justify-content:center;width:26px;height:26px;padding:0;margin-bottom:2px;border:1px solid var(--rule);background:transparent;color:var(--ink);font-size:14px;line-height:1">&larr;</button>
     <img src="./logo.png" alt="Hawks" width="38" height="36" style="flex:none;display:${showBack ? 'none' : 'block'};width:38px;height:36px;margin-bottom:1px">
     <div style="flex:1;min-width:0">
@@ -897,15 +899,18 @@ function renderTeams(state) {
 function renderTripSettings(state) {
   const btn = 'display:block;width:100%;border:1px solid var(--rule);background:transparent;font-weight:800;font-size:12px;letter-spacing:.06em;text-transform:uppercase;padding:11px;text-align:left;color:var(--ink)';
   const code = state.ui.tripCode;
+  const practice = isPractice(state);
+  const live = !practice && !!code;
+  const where = practice ? 'Practice' : code ? '2026 Live Tournament' : '';
   return `
   <div style="border-top:2px solid var(--rule);margin-top:14px;padding:14px 18px 30px;display:flex;flex-direction:column;gap:8px">
     <div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">This phone</div>
-    <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7)">Playing as <strong>${esc(myName(state))}</strong>${code ? ` &middot; trip code <strong>${esc(code)}</strong>` : syncAvailable() ? '' : ' &middot; saving on this phone only'}.</div>
+    <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7)">Playing as <strong>${esc(myName(state))}</strong>${where ? ` &middot; <strong>${where}</strong>` : syncAvailable() ? '' : ' &middot; saving on this phone only'}${live ? ` &middot; code <strong>${esc(code)}</strong>` : ''}.</div>
     <button data-action="forget-me" style="${btn}">Not you? Switch player</button>
-    ${syncAvailable() ? `<button data-action="change-code" style="${btn}">Change trip code (re-enter)</button>` : ''}
-    ${code ? `<button data-action="share-invite" style="${btn}">Copy invite link for the group</button>` : ''}
-    <button data-action="reset-trip" data-kind="fresh" style="${btn};color:var(--accent);border-color:var(--accent)">Clear everything &amp; start the trip</button>
-    <button data-action="reset-trip" data-kind="sample" style="${btn}">Load the sample trip</button>
+    ${syncAvailable() ? `<button data-action="change-code" style="${btn}">Switch Practice / Live Tournament</button>` : ''}
+    ${live ? `<button data-action="share-invite" style="${btn}">Copy invite link for the group</button>` : ''}
+    <button data-action="reset-trip" data-kind="fresh" style="${btn};color:var(--accent);border-color:var(--accent)">${live ? 'Clear the live tournament' : 'Clear everything &amp; start fresh'}</button>
+    ${live ? '' : `<button data-action="reset-trip" data-kind="sample" style="${btn}">Load the sample trip</button>`}
   </div>`;
 }
 
@@ -973,6 +978,7 @@ function renderHcpModal(state) {
 // First launch on a phone: join the trip (code) and say who you are.
 function renderWelcome(state) {
   const needCode = syncAvailable() && !state.ui.tripCode;
+  const practiceJoin = state.ui.joinMode === 'practice';
   const names = PLAYERS.map((p) => `<button data-action="pick-me" data-player="${p.id}" class="btn btn-secondary" style="text-align:left">${p.name}</button>`).join('');
   return `
   <div class="modal-backdrop">
@@ -982,9 +988,17 @@ function renderWelcome(state) {
         <div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Welcome to the Hawks Cup</div>
       </div>
       ${needCode ? `
+      <div style="display:flex;gap:1px;background:var(--rule);border:1px solid var(--rule)">
+        ${[['live', '2026 Live Tournament'], ['practice', 'Practice']].map(([id, name]) => {
+          const on = (state.ui.joinMode || 'live') === id;
+          return `<button data-action="join-mode" data-mode="${id}" style="flex:1;border:0;background:${on ? 'var(--accent)' : 'var(--bg)'};color:${on ? '#fff' : 'var(--ink)'};font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:12px 6px">${name}</button>`;
+        }).join('')}
+      </div>
+      ${practiceJoin ? `
+      <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7)">Practice is a sandbox for testing the site. Nothing in it counts, and anyone can wipe it.</div>` : `
       <label style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">Trip code (from the group text)
         <input id="trip-code-input" class="field-input" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="e.g. hawks-7k2q" style="margin-top:4px">
-      </label>` : ''}
+      </label>`}` : ''}
       <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">Who are you?</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${names}</div>
     </div>

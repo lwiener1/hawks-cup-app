@@ -456,6 +456,10 @@ function applyTripCode(rawCode) {
   startSync();
 }
 
+function setJoinMode(mode) {
+  update((state) => { state.ui.joinMode = mode === 'practice' ? 'practice' : 'live'; });
+}
+
 // Leave this trip on this phone only: back to the welcome screen to type a
 // code and pick a player. Nothing is changed for anyone else.
 function changeTripCode() {

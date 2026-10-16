@@ -24,6 +24,11 @@ function normalizeTripCode(code) {
   return String(code || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 40);
 }
 
+// Two modes: the shared Practice trip (a sandbox anyone can mess with, wipe
+// and reload), and the 2026 Live Tournament, which needs its own trip code.
+const PRACTICE_CODE = 'hawks-practice';
+function isPractice(state) { return normalizeTripCode(state.ui.tripCode) === PRACTICE_CODE; }
+
 function setSyncStatus(status) {
   if (Sync.status === status) return;
   Sync.status = status;

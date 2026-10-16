@@ -64,7 +64,9 @@ document.addEventListener('click', (ev) => {
     }
     case 'pick-me': {
       const codeInput = document.getElementById('trip-code-input');
-      if (codeInput) {
+      if (getState().ui.joinMode === 'practice' && !getState().ui.tripCode && syncAvailable()) {
+        applyTripCode(PRACTICE_CODE);
+      } else if (codeInput) {
         if (!normalizeTripCode(codeInput.value)) { codeInput.focus(); break; }
         applyTripCode(codeInput.value);
       }
@@ -103,8 +105,9 @@ document.addEventListener('click', (ev) => {
     case 'clear-verified': clearVerified(a.session); break;
     case 'forget-me': forgetMe(); break;
     case 'change-code':
-      if (confirm('Leave this trip on this phone and enter a trip code again? Nothing is deleted for anyone else.')) changeTripCode();
+      if (confirm('Leave this trip on this phone and pick Practice or the Live Tournament again? Nothing is deleted for anyone else.')) changeTripCode();
       break;
+    case 'join-mode': setJoinMode(a.mode); break;
     case 'share-invite': {
       const link = inviteLink();
       const done = () => alert('Invite link copied. Text it to the group:\n\n' + link);
@@ -116,7 +119,11 @@ document.addEventListener('click', (ev) => {
       const msg = a.kind === 'sample'
         ? 'Replace EVERYTHING in this trip (for all players) with the sample trip data?'
         : 'Erase ALL scores, money and chat for this trip (for all players) and start clean?';
-      if (confirm(msg)) resetTrip(a.kind);
+      if (!isPractice(getState()) && syncAvailable()) {
+        // Live trip: wiping it is permanent for everyone, so make it deliberate.
+        const typed = prompt('This is the LIVE tournament. ' + msg + '\n\nType CLEAR to confirm.');
+        if (typed && typed.trim().toUpperCase() === 'CLEAR') resetTrip(a.kind);
+      } else if (confirm(msg)) resetTrip(a.kind);
       break;
     }
     default: break; // includes 'noop'
