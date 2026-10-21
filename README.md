@@ -37,6 +37,12 @@ There are no logins and no codes to type. The app has two fixed trips,
 `trips/<name>/`. Anyone who has the site link can open either one, so only
 share the link with the group.
 
+Scheduled clear: on 4 or 5 Nov 2026 (before the first round) the first phone to
+open a trip wipes its scores, money, chat and photos once and stamps the trip so
+it never happens again (see `SCHEDULED_CLEAR` in `sync.js`). Handicaps and team
+names are kept. From 6 Nov 2026 the Live Tournament can't be cleared by anyone
+(`LIVE_START`); Practice can still be cleared any time.
+
 Without a Firebase config the app still works, saving on that phone only.
 
 ## Scorecard photos

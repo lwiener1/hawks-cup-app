@@ -93,6 +93,42 @@ a { color: var(--accent); }
 }
 @media (min-width: 481px) { .modal-sheet { border: 2px solid var(--ink); } }
 
+/* ---- Hole in one / albatross celebration --------------------------------- */
+.celebrate {
+  position: fixed; inset: 0; z-index: 200; overflow: hidden;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  background: radial-gradient(circle at 50% 38%, #1b2f8c 0%, #0b1a5a 55%, #060d33 100%);
+  animation: celebrate-in .35s ease-out both;
+}
+@keyframes celebrate-in { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: none; } }
+.confetti-layer { position: absolute; inset: 0; pointer-events: none; }
+.confetti-piece {
+  position: absolute; top: -24px; display: block; opacity: .95;
+  animation-name: confetti-fall; animation-timing-function: linear; animation-iteration-count: infinite;
+}
+@keyframes confetti-fall {
+  0%   { transform: translate3d(0, -10vh, 0) rotate(0deg); }
+  50%  { transform: translate3d(18px, 55vh, 0) rotate(420deg); }
+  100% { transform: translate3d(-14px, 112vh, 0) rotate(840deg); }
+}
+.celebrate-card { position: relative; z-index: 1; text-align: center; color: #fff; max-width: 340px; width: 100%; }
+.celebrate-logo { display: block; margin: 0 auto 10px; animation: celebrate-pop .7s cubic-bezier(.2,1.6,.4,1) both; }
+.celebrate-kicker { font-size: 12px; font-weight: 800; letter-spacing: .3em; text-transform: uppercase; color: #e0b030; }
+.celebrate-title {
+  font-size: 46px; line-height: 1; font-weight: 800; letter-spacing: -.02em; margin: 8px 0 14px;
+  animation: celebrate-pop .8s .1s cubic-bezier(.2,1.6,.4,1) both;
+}
+.celebrate-name { font-size: 34px; font-weight: 800; color: #e0b030; letter-spacing: -.01em; }
+.celebrate-where { font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .85; margin-top: 6px; }
+.celebrate-bounty { font-size: 15px; line-height: 1.5; margin: 18px 0 22px; opacity: .95; }
+.celebrate-bounty strong { font-size: 22px; color: #e0b030; }
+.celebrate-btn {
+  border: 2px solid #e0b030; background: #e0b030; color: #0b1a5a; font: inherit; font-weight: 800;
+  font-size: 16px; letter-spacing: .08em; text-transform: uppercase; padding: 14px 34px;
+}
+@keyframes celebrate-pop { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .confetti-piece, .celebrate, .celebrate-logo, .celebrate-title { animation: none; } }
+
 /* ---- The hammer ---------------------------------------------------------- */
 .hammer-btn {
   position: relative; display: flex; align-items: center; justify-content: center; gap: 10px;

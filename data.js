@@ -6,7 +6,7 @@
 const TEAM_EVENT_STAKE = 200;
 
 const TEAM_ONE_NAME = 'The LAWDs';
-const TEAM_TWO_NAME = 'The Prince’s Court Jesters';
+const TEAM_TWO_NAME = 'The Fore Princes';
 
 const PLAYERS = [
   { id: 'david', name: 'David', team: 'L', hcp: 13, captain: true },
@@ -133,6 +133,17 @@ GAMES_BY_ID.netsingles = { id: 'netsingles', name: 'Net stroke', note: '', shape
 function gameFor(session) { return GAMES_BY_ID[session.format] || GAMES[0]; }
 
 const TAG_TYPES = ['Greenie', 'CTP', 'Gallery rule', 'In the water', 'Whiff', 'Sandbagging confession', 'Lost a club', 'Four-putt', 'Sand to sand', 'Topped tee shot'];
+
+// Big shots. A hole in one (a 1 on any hole) or an albatross (3 under par, so a
+// 2 on a par 5) gets a celebration on every phone, a feed post, and a bounty:
+// every other player on the trip pays the shooter this much.
+const FEAT_BOUNTY = 20;
+function featFor(gross, par) {
+  if (gross === 1) return 'ace';
+  if (gross >= 2 && par - gross === 3) return 'albatross';
+  return null;
+}
+const FEAT_NAMES = { ace: 'Hole in one', albatross: 'Albatross' };
 
 // Once a finished match is submitted it is locked. This code unlocks it.
 // (It sits in the page source, so it keeps honest people honest, nothing more.)

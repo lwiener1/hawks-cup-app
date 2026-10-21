@@ -182,7 +182,27 @@ function computeAwards(state) {
   });
   const mostFined = PLAYERS.slice().sort((a, b) => fineCounts[b.id] - fineCounts[a.id])[0];
 
+  // Hole in one club: every ace and albatross, worked out from the scores.
+  const feats = [];
+  state.sessions.forEach((session) => {
+    const course = courseFor(session);
+    session.matches.forEach((match) => {
+      match.sideA.concat(match.sideB).forEach((id) => {
+        const scores = match.grossScores[id] || {};
+        Object.keys(scores).forEach((holeN) => {
+          const hole = course.holes.find((h) => String(h.n) === String(holeN));
+          const type = hole && featFor(scores[holeN], hole.par);
+          if (type) feats.push({ playerId: id, type, holeN: hole.n, course: course.name });
+        });
+      });
+    });
+  });
+  const featWho = feats.length
+    ? feats.map((f) => `${PLAYERS_BY_ID[f.playerId].name} (${f.type === 'ace' ? 'ace' : 'albatross'}, ${ordinal(f.holeN)})`).join(', ')
+    : 'Nobody yet';
+
   return [
+    { title: 'Hole in one club', detail: 'Aces & albatrosses', who: featWho },
     { title: 'Player of the trip', detail: 'Points won, matches played', who: `${potPlayer.name} · ${fmtPoints(points[potPlayer.id])} pts` },
     { title: 'The Shank', detail: 'Worst single hole of the week', who: shank ? `${PLAYERS_BY_ID[shank.playerId].name} · ${shank.gross} on ${shank.hole}` : 'Nobody yet' },
     { title: 'Deepest pockets', detail: 'Ledger low man', who: `${moneyLow.name} · ${fmtMoney(totals[moneyLow.id])}` },

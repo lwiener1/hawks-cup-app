@@ -945,7 +945,9 @@ function renderTripSettings(state) {
     <button data-action="forget-me" style="${btn}">Not you? Switch player</button>
     ${syncAvailable() ? `<button data-action="change-code" style="${btn}">Switch Practice / Live Tournament</button>` : ''}
     ${live ? `<button data-action="share-invite" style="${btn}">Copy the site link for the group</button>` : ''}
-    <button data-action="reset-trip" data-kind="fresh" style="${btn};color:var(--accent);border-color:var(--accent)">${live ? 'Clear the live tournament' : 'Clear everything &amp; start fresh'}</button>
+    ${liveClearLocked(state)
+      ? `<div style="border:1px solid var(--rule);padding:11px;font-size:12px;line-height:1.45;color:var(--muted)"><strong style="letter-spacing:.06em;text-transform:uppercase;color:var(--ink)">Live tournament locked.</strong> It can't be cleared now that play has started.</div>`
+      : `<button data-action="reset-trip" data-kind="fresh" style="${btn};color:var(--accent);border-color:var(--accent)">${live ? 'Clear the live tournament' : 'Clear everything &amp; start fresh'}</button>`}
     ${live ? '' : `<button data-action="reset-trip" data-kind="sample" style="${btn}">Load the sample trip</button>`}
   </div>`;
 }
@@ -963,7 +965,7 @@ function renderTrophy(state) {
   const awardRows = awards.map((a) => `
     <div style="display:flex;gap:12px;align-items:baseline;padding:11px 18px;border-top:1px solid var(--rule)">
       <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800;letter-spacing:-.01em">${esc(a.title)}</div><div style="font-size:11px;color:var(--muted)">${esc(a.detail)}</div></div>
-      <div style="font-size:13px;font-weight:800;text-align:right;white-space:nowrap">${esc(a.who)}</div>
+      <div style="font-size:13px;font-weight:800;text-align:right;max-width:55%">${esc(a.who)}</div>
     </div>`).join('');
 
   return `
@@ -1175,6 +1177,8 @@ function render() {
   lastRenderedScreen = ui.screen;
   const newPhoto = document.querySelector('.photo-scroll');
   if (newPhoto && photoPos) { newPhoto.scrollTop = photoPos[0]; newPhoto.scrollLeft = photoPos[1]; }
+
+  if (typeof checkCelebrations === 'function') checkCelebrations(state);
 
   Object.keys(saved).forEach((id) => {
     const el = document.getElementById(id);

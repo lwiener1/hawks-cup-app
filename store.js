@@ -111,7 +111,7 @@ function seedState(ui) {
     makeMatch(['alex', 'dan'], ['ryan', 'jamey'], 'm1b', 'lowhigh'),
   ];
   seedResultsIntoMatch(s1.matches[0], s1, [1, 0, 1, 0, 1, 0, -1, 0, 1, 0, 0, -1, 0, 1, 0, 0, 1, 0]); // LAWDs sweep all 3 bets
-  seedResultsIntoMatch(s1.matches[1], s1, [-1, 0, 0, 1, 0, 0, -1, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0]); // Jesters take front + total, back halved
+  seedResultsIntoMatch(s1.matches[1], s1, [-1, 0, 0, 1, 0, 0, -1, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0]); // Princes take front + total, back halved
 
   // Session 2 (Mid Pines, fourball): live, 12 holes in.
   s2.locked = true;
@@ -139,7 +139,7 @@ function seedState(ui) {
     ['Hawks Cup', true, 'David & Dan go 2 UP — Dan nets a 4 on the 8th with a shot.', 60e3],
     ['Tom', false, 'Closest to the pin on 13 is $15. Somebody hit it.', 240e3],
     ['Lenny', false, 'Greenie on 12 and a two-putt. Paid for lunch.', 660e3],
-    ['Hawks Cup', true, 'Jesters take the 10th — match 2 back to 1 UP.', 1560e3],
+    ['Hawks Cup', true, 'Princes take the 10th — match 2 back to 1 UP.', 1560e3],
     ['Jamey', false, 'Fined again for the gallery rule. Ledger is a crime scene.', 2880e3],
     ['David', false, 'Tobacco Road order of play at dinner. Bring your own excuses.', 3600e3],
   ];
@@ -164,7 +164,7 @@ function stableStringify(v) {
 
 function flattenState(state) {
   const out = {};
-  out.meta = { teamOneName: state.teamOneName, teamTwoName: state.teamTwoName };
+  out.meta = { teamOneName: state.teamOneName, teamTwoName: state.teamTwoName, clearedOn: state.clearedOn || null };
   state.sessions.forEach((s, si) => {
     const doc = Object.assign({}, s, { order: si });
     delete doc.matches;
@@ -211,7 +211,7 @@ function assembleState(docs, ui) {
   feed.sort((a, b) => b.ts - a.ts);
   return {
     teamOneName: TEAM_ONE_NAME,
-    teamTwoName: TEAM_TWO_NAME,
+    teamTwoName: TEAM_TWO_NAME, clearedOn: meta.clearedOn || null,
     sessions, ledger, sideGameEvents, feed, handicaps, photos: photos.sort((a, b) => a.ts - b.ts), ui,
   };
 }

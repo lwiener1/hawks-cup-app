@@ -115,6 +115,7 @@ document.addEventListener('click', (ev) => {
       break;
     }
     case 'reset-trip': {
+      if (liveClearLocked(getState())) { alert('The live tournament is locked. It can\'t be cleared once play has started on 11/6.'); break; }
       const msg = a.kind === 'sample'
         ? 'Replace EVERYTHING in this trip (for all players) with the sample trip data?'
         : 'Erase ALL scores, money and chat for this trip (for all players) and start clean?';

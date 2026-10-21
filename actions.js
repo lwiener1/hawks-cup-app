@@ -364,6 +364,35 @@ function postHoleAndAdvance(matchId) {
       }
     });
 
+    // Hole in one / albatross: a feed post (which is what sets off the
+    // celebration on every phone) plus the bounty from everyone else. Ids are
+    // fixed per match, hole and player, so re-posting the hole never duplicates
+    // or re-celebrates, and correcting a mistaken score removes both again.
+    const featPrefix = `feat_${matchId}_${hole.n}_`;
+    const oldFeats = {};
+    state.feed.forEach((f) => { if (f.feat && f.id.indexOf(featPrefix) === 0) oldFeats[f.id] = f; });
+    state.feed = state.feed.filter((f) => !oldFeats[f.id]);
+    ids.forEach((pid) => {
+      const type = featFor(v.gross[pid], hole.par);
+      if (!type) return;
+      const name = PLAYERS_BY_ID[pid].name;
+      const others = PLAYERS.filter((p) => p.id !== pid);
+      const total = FEAT_BOUNTY * others.length;
+      const fid = featPrefix + pid;
+      const ts = oldFeats[fid] ? oldFeats[fid].ts : Date.now();
+      const label = FEAT_NAMES[type];
+      state.feed.unshift({
+        id: fid, author: 'Hawks Cup', isSystem: true, ts,
+        text: `${type === 'ace' ? 'ACE!' : 'ALBATROSS!'} ${name} made a ${label.toLowerCase()} on the ${ordinal(hole.n)} at ${course.name}. Everyone else owes ${name} $${FEAT_BOUNTY} ($${total}).`,
+        feat: { type, playerId: pid, holeN: hole.n, course: course.name, par: hole.par, bounty: FEAT_BOUNTY, total },
+      });
+      const detail = `${label} ${ordinal(hole.n)}`;
+      state.ledger.push({ id: uid('ldg'), kind: 'bounty', matchId, holeN: hole.n, playerId: pid, amount: total, detail, ts });
+      others.forEach((p) => {
+        state.ledger.push({ id: uid('ldg'), kind: 'bounty', matchId, holeN: hole.n, playerId: p.id, amount: -FEAT_BOUNTY, detail: `${detail} (${name})`, ts });
+      });
+    });
+
     const results = computeHoleResults(match, course.holes);
     const nickA = sideShortLabel(state, session, match.sideA), nickB = sideShortLabel(state, session, match.sideB);
     const label = matchStateLabel(results, course.holes.length, nickA, nickB, maxPerHole(match.format));
@@ -528,6 +557,10 @@ function changeTripCode() {
 }
 
 function resetTrip(kind) {
+  if (liveClearLocked(getState())) {
+    showNotice('The live tournament is locked: it can\'t be cleared once play has started (11/6).');
+    return;
+  }
   const oldPhotoIds = getState().photos.map((p) => p.id);
   update((state) => {
     const base = kind === 'sample' ? seedState(state.ui) : freshState(state.ui);

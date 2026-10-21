@@ -31,6 +31,41 @@ const LIVE_CODE = 'hawks-2026-live';
 function isPractice(state) { return normalizeTripCode(state.ui.tripCode) === PRACTICE_CODE; }
 function codeForMode(mode) { return mode === 'practice' ? PRACTICE_CODE : LIVE_CODE; }
 
+// Scheduled clear: the first phone to open a trip on 4 or 5 Nov 2026 (local
+// date, before the first round on the 6th) wipes its scores, money, chat and
+// photos once, then stamps the trip so nobody clears it again. Handicaps,
+// pairings setup and team names are kept. It never runs once play has begun.
+const LIVE_START = 20261106;   // first round of the 2026 tournament (local date)
+const SCHEDULED_CLEAR = { id: 'clear-2026-11-04', from: 20261104, until: LIVE_START };   // until is exclusive
+function todayYmd() {
+  const d = new Date();
+  return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+}
+function inClearWindow() {
+  const ymd = todayYmd();
+  return ymd >= SCHEDULED_CLEAR.from && ymd < SCHEDULED_CLEAR.until;
+}
+// From the first round on, nobody can clear the Live Tournament (Practice
+// can still be cleared any time).
+function liveClearLocked(state) {
+  return syncAvailable() && !isPractice(state) && !!state.ui.tripCode && todayYmd() >= LIVE_START;
+}
+
+function maybeScheduledClear() {
+  const state = getState();
+  if (!inClearWindow() || state.clearedOn === SCHEDULED_CLEAR.id) return;
+  const oldPhotoIds = (state.photos || []).map((p) => p.id);
+  update((s) => {
+    const base = freshState(s.ui);
+    s.photos = [];
+    s.sessions = base.sessions;
+    s.ledger = []; s.sideGameEvents = []; s.feed = [];
+    s.clearedOn = SCHEDULED_CLEAR.id;
+    s.ui.viewPhotoId = null; s.ui.drafts = {}; s.ui.cardMatchId = null; s.ui.screen = 'cup';
+  });
+  oldPhotoIds.forEach((id) => { if (typeof deletePhotoData === 'function') deletePhotoData(id); });
+}
+
 function setSyncStatus(status) {
   if (Sync.status === status) return;
   Sync.status = status;
@@ -127,6 +162,7 @@ function onSyncSnapshot(snap) {
   Object.assign(state, next);
   persist();
   render();
+  if (!fromCache) maybeScheduledClear();   // only on word from the server, never from a stale offline copy
 }
 
 // Writes only the documents that changed since we last synced.
