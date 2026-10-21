@@ -44,7 +44,8 @@ function goScreen(screen) {
 function goBack() {
   update((state) => {
     const s = state.ui.screen;
-    if (s === 'card' && state.ui.cardFrom === 'verify' && findSession(state.ui.verifySessionId)) state.ui.screen = 'verify';
+    if (s === 'card' && state.ui.cardFrom === 'live') state.ui.screen = 'live';
+    else if (s === 'card' && state.ui.cardFrom === 'verify' && findSession(state.ui.verifySessionId)) state.ui.screen = 'verify';
     else state.ui.screen = (s === 'card' || s === 'setup' || s === 'verify') ? 'rounds' : 'cup';
     state.ui.cardFrom = 'rounds';
   });
@@ -55,10 +56,23 @@ function openSetup(sessionId) {
 }
 
 function openCard(matchId) {
-  update((state) => { state.ui.cardMatchId = matchId; state.ui.cardFrom = 'rounds'; state.ui.screen = 'card'; });
+  update((state) => {
+    state.ui.cardFrom = state.ui.screen === 'live' ? 'live' : 'rounds';   // Back returns to where you came from
+    state.ui.cardMatchId = matchId;
+    state.ui.screen = 'card';
+  });
+}
+
+// Course, tee and the counts-toward-the-cup switch all change a match's result,
+// so they are frozen while any match in the round is submitted.
+function roundIsLocked(sessionId) {
+  if (!findSession(sessionId).matches.some((m) => m.submitted)) return false;
+  showNotice('A match in this round is submitted and locked. Unlock it (match card, "Unlock to edit") before changing the course, tees or team-event setting.');
+  return true;
 }
 
 function pickCourse(sessionId, courseId) {
+  if (roundIsLocked(sessionId)) return;
   update((state) => {
     const session = findSession(sessionId);
     session.courseId = courseId;
@@ -67,6 +81,7 @@ function pickCourse(sessionId, courseId) {
 }
 
 function pickTee(sessionId, teeId) {
+  if (roundIsLocked(sessionId)) return;
   update((state) => {
     const session = findSession(sessionId);
     if (COURSES_BY_ID[session.courseId].tees.some((t) => t.id === teeId)) session.teeId = teeId;
@@ -86,6 +101,7 @@ function pickGame(sessionId, gameId) {
 }
 
 function toggleCounts(sessionId) {
+  if (roundIsLocked(sessionId)) return;
   update((state) => {
     const session = findSession(sessionId);
     session.counts = !sessionCounts(session);
@@ -108,6 +124,10 @@ function setSlot(sessionId, team, slot, playerId) {
 }
 
 function lockInSession(sessionId) {
+  if (findSession(sessionId).matches.some((m) => m.submitted)) {
+    showNotice('A match in this round is submitted and locked, so the pairings can\'t be re-set. Unlock it first (match card, "Unlock to edit").');
+    return;
+  }
   update((state) => {
     const session = findSession(sessionId);
     const pairings = pairingsFromOrders(session.shape, session.teamLOrder, session.teamTOrder);
@@ -152,7 +172,43 @@ function writeDraft(state, match, course, mutate) {
   state.ui.drafts[match.id] = d;
 }
 
+// A submitted match can't be changed until it is unlocked with the code.
+function matchIsLocked(matchId) {
+  const match = matchById(matchId);
+  if (!match || !match.submitted) return false;
+  showNotice('This match is submitted and locked. Tap "Unlock to edit" and enter the code to change it.');
+  return true;
+}
+
+function submitMatch(matchId) {
+  update((state) => {
+    const match = matchById(matchId);
+    const session = sessionForMatch(matchId);
+    const course = courseFor(session);
+    if (!match || match.submitted || !matchComplete(match, course)) return;
+    const who = myName(state);
+    match.submitted = { by: state.ui.me || null, name: who, ts: Date.now() };
+    const results = computeHoleResults(match, course.holes);
+    const label = matchStateLabel(results, course.holes.length, sideShortLabel(state, session, match.sideA), sideShortLabel(state, session, match.sideB), maxPerHole(match.format));
+    const nassau = label.segments.map((s) => `${s.label} ${s.text}`).join(' · ');
+    state.feed.unshift({ id: uid('fd'), author: 'Hawks Cup', isSystem: true, ts: Date.now(),
+      text: `${playerNames(match.sideA)} vs ${playerNames(match.sideB)} submitted by ${who}: ${nassau}.` });
+  });
+}
+
+function unlockMatch(matchId) {
+  update((state) => {
+    const match = matchById(matchId);
+    if (!match || !match.submitted) return;
+    const was = match.submitted.name || 'someone';
+    delete match.submitted;
+    state.feed.unshift({ id: uid('fd'), author: 'Hawks Cup', isSystem: true, ts: Date.now(),
+      text: `${playerNames(match.sideA)} vs ${playerNames(match.sideB)} was unlocked by ${myName(state)} (it had been submitted by ${was}).` });
+  });
+}
+
 function stepGross(matchId, playerId, delta) {
+  if (matchIsLocked(matchId)) return;
   update((state) => {
     const match = matchById(matchId);
     const course = courseFor(sessionForMatch(matchId));
@@ -163,6 +219,7 @@ function stepGross(matchId, playerId, delta) {
 }
 
 function toggleTag(matchId, tag) {
+  if (matchIsLocked(matchId)) return;
   update((state) => {
     const match = matchById(matchId);
     const course = courseFor(sessionForMatch(matchId));
@@ -177,7 +234,7 @@ function toggleTag(matchId, tag) {
 // Name the player a Greenie / CTP pays, or the player(s) a penalty tag fines.
 function toggleTagWho(matchId, tag, playerId) {
   const rule = TAG_RULES[tag];
-  if (!rule) return;
+  if (!rule || matchIsLocked(matchId)) return;
   update((state) => {
     const match = matchById(matchId);
     const course = courseFor(sessionForMatch(matchId));
@@ -195,6 +252,7 @@ function toggleTagWho(matchId, tag, playerId) {
 // hole when it is posted, just like the strokes.
 
 function throwHammer(matchId, by) {
+  if (matchIsLocked(matchId)) return;
   update((state) => {
     const match = matchById(matchId);
     const course = courseFor(sessionForMatch(matchId));
@@ -204,6 +262,7 @@ function throwHammer(matchId, by) {
 }
 
 function answerHammer(matchId, resp) {
+  if (matchIsLocked(matchId)) return;
   update((state) => {
     const match = matchById(matchId);
     const course = courseFor(sessionForMatch(matchId));
@@ -213,6 +272,7 @@ function answerHammer(matchId, resp) {
 }
 
 function undoHammer(matchId) {
+  if (matchIsLocked(matchId)) return;
   update((state) => {
     const match = matchById(matchId);
     const course = courseFor(sessionForMatch(matchId));
@@ -243,6 +303,7 @@ function stepHole(matchId, delta) {
 }
 
 function postHoleAndAdvance(matchId) {
+  if (matchIsLocked(matchId)) return;
   update((state) => {
     const match = matchById(matchId);
     const session = sessionForMatch(matchId);
@@ -291,8 +352,14 @@ function postHoleAndAdvance(matchId) {
           });
         });
       } else {
+        // The offender pays the fine; the other side shares it equally.
         (whoNow[tag] || []).forEach((pid) => {
-          state.ledger.push({ id: uid('ldg'), kind: 'fine', matchId, holeN: hole.n, playerId: pid, amount: -rule.amount, detail: `${rule.fine} ${ordinal(hole.n)}`, ts });
+          const others = match.sideA.includes(pid) ? match.sideB : match.sideA;
+          const share = rule.amount / others.length;
+          state.ledger.push({ id: uid('ldg'), kind: 'fine', matchId, holeN: hole.n, playerId: pid, amount: -rule.amount, detail: `${tag} ${ordinal(hole.n)}`, ts });
+          others.forEach((id) => {
+            state.ledger.push({ id: uid('ldg'), kind: 'fine-won', matchId, holeN: hole.n, playerId: id, amount: share, detail: `${tag} ${ordinal(hole.n)} (${PLAYERS_BY_ID[pid].name} fined)`, ts });
+          });
         });
       }
     });
@@ -335,19 +402,6 @@ function sendFeedPost(text) {
   if (input) input.value = '';
   update((state) => {
     state.feed.unshift({ id: uid('fd'), author: myName(state), isSystem: false, text: trimmed, ts: Date.now() });
-  });
-}
-
-function openFines() {
-  update((state) => { state.ui.finesOpen = true; });
-}
-function closeFines() {
-  update((state) => { state.ui.finesOpen = false; });
-}
-function chargeFine(playerId, fineType, amount) {
-  update((state) => {
-    state.ledger.push({ id: uid('ldg'), kind: 'fine', playerId, amount: -Math.abs(amount), detail: fineType, ts: Date.now() });
-    state.ui.finesOpen = false;
   });
 }
 
@@ -419,6 +473,12 @@ function closeHcp() {
 }
 
 function setHandicap(playerId, value) {
+  const submittedWithPlayer = getState().sessions.some((s) => s.matches.some((m) => m.submitted && m.sideA.concat(m.sideB).includes(playerId)));
+  if (submittedWithPlayer) {
+    closeHcp();
+    showNotice(`${PLAYERS_BY_ID[playerId].name} is in a submitted match. Unlock it before changing the handicap, because it would change that match's result.`);
+    return;
+  }
   update((state) => {
     state.ui.hcpEditPlayer = null;
     const old = PLAYERS_BY_ID[playerId].hcp;
@@ -485,6 +545,5 @@ function resetTrip(kind) {
 }
 
 function inviteLink() {
-  const code = getState().ui.tripCode;
-  return location.origin + location.pathname + (code ? '#trip=' + code : '');
+  return location.origin + location.pathname;
 }

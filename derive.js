@@ -55,6 +55,39 @@ function ledgerDetail(state, playerId) {
   return entries.slice(0, 2).map((e) => e.detail).join(' · ');
 }
 
+// A match is over once its card is full (every hole posted) or every bet in
+// it is decided. Once over it has to be submitted; a submitted match is locked.
+function matchComplete(match, course) {
+  const results = computeHoleResults(match, course.holes);
+  if (results.length >= course.holes.length) return true;
+  return matchStateLabel(results, course.holes.length, 'A', 'B', maxPerHole(match.format)).done;
+}
+
+function matchSubmitted(match) { return !!match.submitted; }
+
+// Finished matches that nobody has submitted yet.
+function unsubmittedMatches(state) {
+  const out = [];
+  state.sessions.forEach((session) => {
+    const course = courseFor(session);
+    session.matches.forEach((match) => {
+      if (!match.submitted && matchComplete(match, course)) out.push({ session, course, match });
+    });
+  });
+  return out;
+}
+
+// Matches being played right now (some holes in, not finished) and matches
+// that are set up but haven't teed off. Submitted and finished ones are out.
+function liveMatchSets(state) {
+  const live = [], notStarted = [];
+  allMatches(state).forEach((e) => {
+    if (e.match.submitted || matchComplete(e.match, e.course)) return;
+    (e.results.length ? live : notStarted).push(e);
+  });
+  return { live, notStarted };
+}
+
 function allMatches(state) {
   const out = [];
   state.sessions.forEach((session) => {
@@ -138,8 +171,9 @@ function computeAwards(state) {
     (a, b) => (netToPar[a.id] / (holesCounted[a.id] || 1)) - (netToPar[b.id] / (holesCounted[b.id] || 1))
   )[0];
 
-  // Most fines: only real fines (entries made with "Charge a fine"; sample
-  // data from before that had no kind, so a plain negative counts there).
+  // Most fines: one per fine charged to a player (hole fines are kind 'fine'
+  // on the offender; the other side's payout rows are kind 'fine-won'). Sample
+  // data from before that had no kind, so a plain negative counts there.
   const fineCounts = {};
   PLAYERS.forEach((p) => { fineCounts[p.id] = 0; });
   state.ledger.forEach((e) => {

@@ -27,10 +27,17 @@ document.addEventListener('click', (ev) => {
     case 'go-to-hole': goToHole(a.match, Number(a.idx)); break;
     case 'step-hole': stepHole(a.match, Number(a.delta)); break;
     case 'post-hole': postHoleAndAdvance(a.match); break;
+    case 'submit-match':
+      if (confirm('Submit the final score for this match? Once submitted it is locked, and changing it needs the unlock code.')) submitMatch(a.match);
+      break;
+    case 'unlock-match': {
+      const code = prompt('Enter the code to unlock this match for editing:');
+      if (code === null) break;
+      if (code.trim().toUpperCase() === UNLOCK_CODE) unlockMatch(a.match);
+      else alert('That code is not right. The match stays locked.');
+      break;
+    }
     case 'pick-money-tab': pickMoneyTab(a.tab); break;
-    case 'open-fines': openFines(); break;
-    case 'close-fines': closeFines(); break;
-    case 'close-fines-backdrop': closeFines(); break;
     case 'open-money-entry': openMoneyModal('entry'); break;
     case 'open-money-payout': openMoneyModal('payout'); break;
     case 'close-money-modal': closeMoneyModal(); break;
@@ -51,24 +58,16 @@ document.addEventListener('click', (ev) => {
     case 'remove-ledger':
       if (confirm('Remove this money entry for everyone?')) removeLedgerEntry(a.entry);
       break;
-    case 'submit-fine': {
-      const player = document.getElementById('fine-player').value;
-      const type = document.getElementById('fine-type').value;
-      const amount = Number(document.getElementById('fine-amount').value) || 10;
-      chargeFine(player, type, amount);
-      break;
-    }
     case 'send-feed': {
       sendFeedPost(document.getElementById('feed-input').value);
       break;
     }
     case 'pick-me': {
-      const codeInput = document.getElementById('trip-code-input');
-      if (getState().ui.joinMode === 'practice' && !getState().ui.tripCode && syncAvailable()) {
-        applyTripCode(PRACTICE_CODE);
-      } else if (codeInput) {
-        if (!normalizeTripCode(codeInput.value)) { codeInput.focus(); break; }
-        applyTripCode(codeInput.value);
+      if (!getState().ui.tripCode && syncAvailable()) {
+        const mode = getState().ui.joinMode;
+        // First entry to the real event: make the person confirm it.
+        if (mode !== 'practice' && !confirm(`You are entering the OFFICIAL 2026 Live Tournament as ${PLAYERS_BY_ID[a.player].name}.\n\nScores, fines and money entered here are real and count.\n\nTap OK to continue, or Cancel to go back (use Practice to just test the site).`)) break;
+        applyTripCode(codeForMode(mode));
       }
       setMe(a.player);
       break;
@@ -110,9 +109,9 @@ document.addEventListener('click', (ev) => {
     case 'join-mode': setJoinMode(a.mode); break;
     case 'share-invite': {
       const link = inviteLink();
-      const done = () => alert('Invite link copied. Text it to the group:\n\n' + link);
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(done, () => prompt('Copy this invite link:', link));
-      else prompt('Copy this invite link:', link);
+      const done = () => alert('Link copied. Text it to the group. Everyone picks "2026 Live Tournament" and their name:\n\n' + link);
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(done, () => prompt('Copy this link:', link));
+      else prompt('Copy this link:', link);
       break;
     }
     case 'reset-trip': {
@@ -147,25 +146,20 @@ document.addEventListener('change', (ev) => {
 
 initStore();
 
-// An invite link looks like  https://…/#trip=hawks-7k2q  — adopt the code,
-// then strip it from the address bar.
-(function readInviteHash() {
-  const m = location.hash.match(/trip=([A-Za-z0-9_-]+)/);
-  if (!m) return;
-  const code = normalizeTripCode(m[1]);
+// There are only two trips now. A phone still on an older custom trip code
+// (from before Practice / Live existed) moves to the Live trip on a blank
+// local slate; the real data then arrives from the shared trip.
+(function settleTripCode() {
   const state = getState();
-  if (code && code !== state.ui.tripCode) {
-    if (syncAvailable()) {
-      state.ui.tripCode = code;
-      const fresh = freshState(state.ui);
-      Object.keys(state).forEach((k) => delete state[k]);
-      Object.assign(state, fresh);
-      persist();
-    } else {
-      state.ui.tripCode = code;
-    }
+  const cur = normalizeTripCode(state.ui.tripCode);
+  if (syncAvailable() && cur && cur !== PRACTICE_CODE && cur !== LIVE_CODE) {
+    state.ui.tripCode = LIVE_CODE;
+    const fresh = freshState(state.ui);
+    Object.keys(state).forEach((k) => delete state[k]);
+    Object.assign(state, fresh);
+    persist();
   }
-  history.replaceState(null, '', location.pathname + location.search);
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search);   // old #trip= links
 })();
 
 render();

@@ -12,7 +12,7 @@ function uid(prefix) { return prefix + '_' + Math.random().toString(36).slice(2,
 function defaultUi() {
   return {
     screen: 'cup', moneyTab: 'games', setupSessionId: 's3', cardMatchId: null,
-    joinMode: 'live', finesOpen: false, moneyModal: null, drafts: {}, me: null, tripCode: null, hcpEditPlayer: null,
+    joinMode: 'live', moneyModal: null, drafts: {}, me: null, tripCode: null, hcpEditPlayer: null,
     verifySessionId: null, viewPhotoId: null, photoZoom: 1, cardFrom: 'rounds',
   };
 }
@@ -129,7 +129,7 @@ function seedState(ui) {
   const ledgerRows = [
     ['david', 20, 'CTP 6th', 3500e3],
     ['lenny', 10, 'Greenie 12th', 3000e3], ['lenny', -30, 'Two fines', 2900e3],
-    ['alex', 40, 'CTP 3rd', 2000e3], ['dan', -10, 'Lip-out sulk', 1800e3],
+    ['alex', 40, 'CTP 3rd', 2000e3], ['dan', -10, 'Whiff 4th', 1800e3],
     ['tom', 40, 'CTP 12th', 1500e3], ['ben', 10, 'Greenie 7th', 1200e3], ['ben', -40, 'Gallery rule x2', 1100e3],
     ['jamey', -70, 'Four fines', 600e3], ['jamey', -40, 'Pot contribution', 500e3],
   ];
@@ -140,7 +140,7 @@ function seedState(ui) {
     ['Tom', false, 'Closest to the pin on 13 is $15. Somebody hit it.', 240e3],
     ['Lenny', false, 'Greenie on 12 and a two-putt. Paid for lunch.', 660e3],
     ['Hawks Cup', true, 'Jesters take the 10th — match 2 back to 1 UP.', 1560e3],
-    ['Jamey', false, 'Fined again for the lip-out sulk. Ledger is a crime scene.', 2880e3],
+    ['Jamey', false, 'Fined again for the gallery rule. Ledger is a crime scene.', 2880e3],
     ['David', false, 'Tobacco Road order of play at dinner. Bring your own excuses.', 3600e3],
   ];
   state.feed = feedRows.map((r, i) => ({ id: 'seedfeed' + i, author: r[0], isSystem: r[1], text: r[2], ts: now - r[3] }));

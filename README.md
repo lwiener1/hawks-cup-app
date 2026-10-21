@@ -11,8 +11,9 @@ HTML/CSS/JS: no build step, no npm. Every file sits in this one flat folder
    `firebaseConfig` block in `firebase-config.js`.
 2. **GitHub Pages**: upload every file in this folder to a public repo,
    Settings > Pages > deploy from `main` / root.
-3. Open the Pages URL on a phone, enter the trip code, pick your name. Share
-   the invite link (Teams tab > "Copy invite link") with the group.
+3. Open the Pages URL on a phone, pick **2026 Live Tournament** (or **Practice**
+   for testing), then pick your name. No code to type. Share the site link
+   (Teams tab > "Copy the site link") with the group.
 
 Firestore rules (production mode):
 
@@ -31,9 +32,10 @@ service cloud.firestore {
 phones. Without it everything else still works, and photos stay on the phone
 that took them.)
 
-There are no logins. The **trip code** is the only gate: data lives under
-`trips/<code>/`, and nothing outside that path is readable. Pick a code that
-isn't guessable, and only share the invite link with the group.
+There are no logins and no codes to type. The app has two fixed trips,
+`hawks-practice` and `hawks-2026-live` (see `sync.js`), stored under
+`trips/<name>/`. Anyone who has the site link can open either one, so only
+share the link with the group.
 
 Without a Firebase config the app still works, saving on that phone only.
 

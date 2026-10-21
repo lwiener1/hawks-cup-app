@@ -132,28 +132,37 @@ GAMES_BY_ID.netteam = { id: 'netteam', name: 'Net stroke', note: '', shape: 'tea
 GAMES_BY_ID.netsingles = { id: 'netsingles', name: 'Net stroke', note: '', shape: 'singles' };
 function gameFor(session) { return GAMES_BY_ID[session.format] || GAMES[0]; }
 
-const TAG_TYPES = ['Greenie', 'CTP', 'Gallery rule', 'In the water'];
+const TAG_TYPES = ['Greenie', 'CTP', 'Gallery rule', 'In the water', 'Whiff', 'Sandbagging confession', 'Lost a club', 'Four-putt', 'Sand to sand', 'Topped tee shot'];
+
+// Once a finished match is submitted it is locked. This code unlocks it.
+// (It sits in the page source, so it keeps honest people honest, nothing more.)
+const UNLOCK_CODE = 'HAWKS';
 
 // Tags that can be used on this hole (greenies and CTPs are par 3 only).
 function tagsForHole(hole) {
   return TAG_TYPES.filter((t) => !TAG_RULES[t].par3 || hole.par === 3);
 }
 
-const FINE_TYPES = [
-  'Lip-out sulk', 'Gallery rule', 'Late to the tee', 'Air-mailed the green',
-  'Whiff', 'Sandbagging confession', 'Lost a club', 'In the water',
-];
-
 // How each hole tag works. 'pick' pays whoever you name (closest to the pin /
 // on the green isn't something scores can tell us); 'fine' charges whoever
-// you name.
+// you name. Every fine is a hole tag: nothing is charged outside a hole.
 const TAG_RULES = {
   // 'pick' amounts are paid by EACH other player in the match to the winner.
   'Greenie':      { mode: 'pick', amount: 5, par3: true, ask: 'Who got the greenie?' },
   'CTP':          { mode: 'pick', amount: 5, par3: true, ask: 'Who was closest to the pin?' },
-  'Gallery rule': { mode: 'fine', amount: 5, fine: 'Gallery rule', ask: 'Who broke the gallery rule?' },
-  'In the water': { mode: 'fine', amount: 5, fine: 'In the water', ask: 'Who went in the water?' },
+  // 'fine' amounts are what the offender pays in total; it is shared equally
+  // by the other side (1 or 2 players, so $10 always splits to whole dollars).
+  'Gallery rule':           { mode: 'fine', amount: 10, ask: 'Who broke the gallery rule?' },
+  'In the water':           { mode: 'fine', amount: 10, ask: 'Who went in the water?' },
+  'Whiff':                  { mode: 'fine', amount: 10, ask: 'Who whiffed?' },
+  'Sandbagging confession': { mode: 'fine', amount: 10, ask: 'Who confessed to sandbagging?' },
+  'Lost a club':            { mode: 'fine', amount: 10, ask: 'Who lost a club?' },
+  'Four-putt':              { mode: 'fine', amount: 10, ask: 'Who four-putted?' },
+  'Sand to sand':           { mode: 'fine', amount: 10, ask: 'Who hit from sand to sand?' },
+  'Topped tee shot':        { mode: 'fine', amount: 10, ask: 'Who topped a tee shot?' },
 };
+
+const FINE_TYPES = Object.keys(TAG_RULES).filter((t) => TAG_RULES[t].mode === 'fine');
 
 // Logo palette (keep in step with the CSS variables in styles.css).
 const TEAM1_COLOR = '#0b1a5a';      // navy
