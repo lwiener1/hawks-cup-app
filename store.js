@@ -12,7 +12,7 @@ function uid(prefix) { return prefix + '_' + Math.random().toString(36).slice(2,
 function defaultUi() {
   return {
     screen: 'cup', moneyTab: 'games', setupSessionId: 's3', cardMatchId: null,
-    joinMode: 'live', moneyModal: null, drafts: {}, me: null, tripCode: null, hcpEditPlayer: null,
+    joinMode: 'live', moneyModal: null, sideId: null, sideDraft: null, drafts: {}, me: null, tripCode: null, hcpEditPlayer: null,
     verifySessionId: null, viewPhotoId: null, photoZoom: 1, cardFrom: 'rounds',
   };
 }
@@ -93,6 +93,7 @@ function freshState(ui) {
   return {
     teamOneName: TEAM_ONE_NAME, teamTwoName: TEAM_TWO_NAME,
     sessions: buildSessions(), ledger: [], sideGameEvents: [], feed: [], handicaps: {}, photos: [],
+    sideMatches: [], playoffWinner: null,
     ui: ui || defaultUi(),
   };
 }
@@ -110,7 +111,7 @@ function seedState(ui) {
     makeMatch(['david', 'lenny'], ['tom', 'ben'], 'm1a', 'lowhigh'),
     makeMatch(['alex', 'dan'], ['ryan', 'jamey'], 'm1b', 'lowhigh'),
   ];
-  seedResultsIntoMatch(s1.matches[0], s1, [1, 0, 1, 0, 1, 0, -1, 0, 1, 0, 0, -1, 0, 1, 0, 0, 1, 0]); // LAWDs sweep all 3 bets
+  seedResultsIntoMatch(s1.matches[0], s1, [1, 0, 1, 0, 1, 0, -1, 0, 1, 0, 0, -1, 0, 1, 0, 0, 1, 0]); // LAWD sweep all 3 bets
   seedResultsIntoMatch(s1.matches[1], s1, [-1, 0, 0, 1, 0, 0, -1, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0]); // Princes take front + total, back halved
 
   // Session 2 (Mid Pines, fourball): live, 12 holes in.
@@ -164,7 +165,8 @@ function stableStringify(v) {
 
 function flattenState(state) {
   const out = {};
-  out.meta = { teamOneName: state.teamOneName, teamTwoName: state.teamTwoName, clearedOn: state.clearedOn || null };
+  out.meta = { teamOneName: state.teamOneName, teamTwoName: state.teamTwoName, clearedOn: state.clearedOn || null, playoffWinner: state.playoffWinner || null };
+  (state.sideMatches || []).forEach((sm) => { out['sm_' + sm.id] = sm; });
   state.sessions.forEach((s, si) => {
     const doc = Object.assign({}, s, { order: si });
     delete doc.matches;
@@ -185,10 +187,11 @@ function assembleState(docs, ui) {
   const meta = docs.meta || {};
   const sessions = [];
   const matchesBySession = {};
-  const ledger = [], feed = [], sideGameEvents = [], handicaps = {}, photos = [];
+  const ledger = [], feed = [], sideGameEvents = [], handicaps = {}, photos = [], sideMatches = [];
   Object.keys(docs).forEach((key) => {
     const d = docs[key];
-    if (key.indexOf('photo_') === 0) photos.push(d);
+    if (key.indexOf('sm_') === 0) sideMatches.push(d);
+    else if (key.indexOf('photo_') === 0) photos.push(d);
     else if (key.indexOf('hcp_') === 0) handicaps[d.id] = d.hcp;
     // A round at a course the app no longer has (e.g. the removed Matchbox)
     // is dropped; the next sync then deletes it from the shared trip too.
@@ -211,7 +214,8 @@ function assembleState(docs, ui) {
   feed.sort((a, b) => b.ts - a.ts);
   return {
     teamOneName: TEAM_ONE_NAME,
-    teamTwoName: TEAM_TWO_NAME, clearedOn: meta.clearedOn || null,
+    teamTwoName: TEAM_TWO_NAME, clearedOn: meta.clearedOn || null, playoffWinner: meta.playoffWinner || null,
+    sideMatches: sideMatches.sort((a, b) => (a.ts || 0) - (b.ts || 0)),
     sessions, ledger, sideGameEvents, feed, handicaps, photos: photos.sort((a, b) => a.ts - b.ts), ui,
   };
 }
@@ -230,6 +234,8 @@ function loadState() {
     parsed.sessions = parsed.sessions.filter((s) => COURSES_BY_ID[s.courseId]);
     parsed.handicaps = parsed.handicaps || {};
     parsed.photos = parsed.photos || [];
+    parsed.sideMatches = parsed.sideMatches || [];
+    parsed.playoffWinner = parsed.playoffWinner || null;
     return parsed;
   } catch (e) {
     console.warn('Could not read saved state, starting fresh.', e);

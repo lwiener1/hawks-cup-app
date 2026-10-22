@@ -2,9 +2,11 @@
 // of `state` — call again after every update() rather than caching.
 
 // Short label for a side's match-state text: the team's nickname for a
-// team-shape session (e.g. "LAWDs 2 UP"), or the player's own name for a
+// team-shape session (e.g. "LAWD 2 UP"), or the player's own name for a
 // singles-shape session (e.g. "Ryan 2 UP").
 function teamNickname(fullName) {
+  if (fullName === TEAM_ONE_NAME) return TEAM_ONE_NICK;
+  if (fullName === TEAM_TWO_NAME) return TEAM_TWO_NICK;
   const stripped = fullName.replace(/^The\s+/i, '').trim();
   const words = stripped.split(/\s+/);
   return words[words.length - 1];
@@ -16,15 +18,74 @@ function sideShortLabel(state, session, side) {
   return teamNickname(team === 'L' ? state.teamOneName : state.teamTwoName);
 }
 
+// ---- net stableford (the team-event tiebreaker) ----------------------------------
+// Points per hole from a net score against par. Table keys: albatross (3+
+// under), eagle, birdie, par, bogey, dbl (double bogey or worse).
+const STABLEFORD_STD = { albatross: 5, eagle: 4, birdie: 3, par: 2, bogey: 1, dbl: 0 };
+function stablefordPts(net, par, table) {
+  const t = table || STABLEFORD_STD;
+  const d = net - par;
+  return d <= -3 ? t.albatross : d === -2 ? t.eagle : d === -1 ? t.birdie : d === 0 ? t.par : d === 1 ? t.bogey : t.dbl;
+}
+
+// One player's stableford in a round, on his OWN handicap (course handicap,
+// capped at MAX_HCP), not the strokes-off-the-opponent used for match play.
+function ownStableford(playerId, session, match) {
+  const course = courseFor(session);
+  const ph = Math.min(courseHandicapFor(playerId, session), MAX_HCP);
+  const scores = (match.grossScores && match.grossScores[playerId]) || {};
+  const out = { total: 0, holes: 0 };
+  course.holes.forEach((hole) => {
+    const gross = scores[hole.n];
+    if (gross == null) return;
+    out.holes += 1;
+    out.total += stablefordPts(gross - shotsOnHole(ph, hole.si), hole.par);
+  });
+  return out;
+}
+
+// Team totals of net stableford over every counting singles round. `complete`
+// once every player has a score on every hole. No countbacks: if the totals
+// are level, it goes to a playoff.
+function stablefordTiebreak(state) {
+  const sums = { total: { L: 0, T: 0 } };
+  let played = 0, needed = 0, rounds = 0, ready = true;
+  state.sessions.forEach((session) => {
+    if (!sessionCounts(session) || session.shape !== 'singles') return;
+    rounds += 1;
+    if (!session.locked || session.matches.length < plannedMatches(session)) ready = false;
+    session.matches.forEach((m) => {
+      m.sideA.concat(m.sideB).forEach((id) => {
+        const r = ownStableford(id, session, m);
+        sums.total[PLAYERS_BY_ID[id].team] += r.total;
+        played += r.holes;
+        needed += courseFor(session).holes.length;
+      });
+    });
+  });
+  const complete = rounds > 0 && ready && played === needed && needed > 0;
+  const leader = sums.total.L === sums.total.T ? null : sums.total.L > sums.total.T ? 'L' : 'T';
+  return { sums, complete, leader, started: played > 0, played, needed };
+}
+
 // Where the team event stands in money terms. It only settles once the result
 // can no longer change: a team has banked enough points to win (counting
-// finished bets only), or every point is in and it's level (a push).
+// finished bets only), or every point is in and it's level. Level is never
+// left as a push: net stableford in the singles decides it (no countbacks),
+// and if even that is level a recorded playoff winner does.
 function teamEventStatus(state) {
   const t = cupTotals(state.sessions);
   const base = { stake: TEAM_EVENT_STAKE, team1: t.team1, team2: t.team2, settled1: t.settled1, settled2: t.settled2, toWin: t.toWin, available: t.available };
-  if (t.settled1 >= t.toWin) return Object.assign(base, { state: 'won', winner: 'L' });
-  if (t.settled2 >= t.toWin) return Object.assign(base, { state: 'won', winner: 'T' });
-  if (t.available > 0 && t.settled >= t.available) return Object.assign(base, { state: 'push', winner: null });
+  if (t.settled1 >= t.toWin) return Object.assign(base, { state: 'won', winner: 'L', via: 'points' });
+  if (t.settled2 >= t.toWin) return Object.assign(base, { state: 'won', winner: 'T', via: 'points' });
+  if (t.available > 0 && t.settled >= t.available) {
+    const tb = stablefordTiebreak(state);
+    if (tb.complete && tb.leader) return Object.assign(base, { state: 'won', winner: tb.leader, via: 'net stableford', tb });
+    if (state.playoffWinner && tb.complete) return Object.assign(base, { state: 'won', winner: state.playoffWinner, via: 'playoff', tb });
+    // Level on points and not yet decided: waiting on the singles scores, or
+    // level on stableford too and waiting for a playoff.
+    return Object.assign(base, { state: 'tiebreak', winner: null, tb, needPlayoff: tb.complete && !tb.leader });
+  }
   return Object.assign(base, { state: 'open', winner: null });
 }
 
@@ -36,7 +97,7 @@ function teamEventEntries(state) {
   return PLAYERS.map((p) => ({
     id: 'teamevent_' + p.id, playerId: p.id, derived: true, ts: 0,
     amount: p.team === s.winner ? TEAM_EVENT_STAKE : -TEAM_EVENT_STAKE,
-    detail: p.team === s.winner ? 'Team event win' : 'Team event loss',
+    detail: (p.team === s.winner ? 'Team event win' : 'Team event loss') + (s.via && s.via !== 'points' ? ` (${s.via})` : ''),
   }));
 }
 

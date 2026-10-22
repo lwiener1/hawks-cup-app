@@ -5,7 +5,10 @@
 // the winning team. A tie is a push.
 const TEAM_EVENT_STAKE = 200;
 
-const TEAM_ONE_NAME = 'The LAWDs';
+const TEAM_ONE_NAME = 'LAWD of the Swings';
+// Short forms used in match-state text ("LAWD 2 UP", "Princes 1 UP").
+const TEAM_ONE_NICK = 'LAWD';
+const TEAM_TWO_NICK = 'Princes';
 const TEAM_TWO_NAME = 'The Fore Princes';
 
 const PLAYERS = [

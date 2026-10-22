@@ -38,6 +38,9 @@ document.addEventListener('click', (ev) => {
       break;
     }
     case 'pick-money-tab': pickMoneyTab(a.tab); break;
+    case 'set-playoff':
+      if (!a.team || confirm('Record the playoff winner? This settles the team-event money for everyone.')) setPlayoff(a.team || null);
+      break;
     case 'open-money-entry': openMoneyModal('entry'); break;
     case 'open-money-payout': openMoneyModal('payout'); break;
     case 'close-money-modal': closeMoneyModal(); break;
@@ -126,7 +129,10 @@ document.addEventListener('click', (ev) => {
       } else if (confirm(msg)) resetTrip(a.kind);
       break;
     }
-    default: break; // includes 'noop'
+    default:
+      // side matches (sidematch.js) own the side-* and sd-* actions; the rest is 'noop'
+      if (typeof handleSideAction === 'function') handleSideAction(a);
+      break;
   }
 });
 

@@ -43,6 +43,16 @@ it never happens again (see `SCHEDULED_CLEAR` in `sync.js`). Handicaps and team
 names are kept. From 6 Nov 2026 the Live Tournament can't be cleared by anyone
 (`LIVE_START`); Practice can still be cleared any time.
 
+Team-event tiebreaker: if every point is in and it is 12-12, net stableford over
+the Saturday singles decides it (each player on his own handicap). If that is level
+too, a playoff winner is recorded in the app. No countbacks. See
+`stablefordTiebreak` in `derive.js`.
+
+Side matches (the Side tab, `sidematch.js`): optional individual games on top of
+the team event. Match play, stableford or stroke play, net / gross / custom
+strokes, any players, rounds and holes, a stake and payout. They are scored from
+the gross scores already entered in the team matches and synced as `sm_*` docs.
+
 Without a Firebase config the app still works, saving on that phone only.
 
 ## Scorecard photos

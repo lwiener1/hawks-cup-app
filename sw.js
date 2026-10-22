@@ -2,11 +2,11 @@
 // offline cache handle that) — this only keeps the app itself loadable with
 // no signal. Same-origin files are network-first so a redeploy shows up on
 // the next open instead of one load later; the Firebase SDK is cache-first.
-const CACHE = 'hawks-cup-v41';
+const CACHE = 'hawks-cup-v44';
 const ASSETS = [
   './', './index.html', './styles.css', './firebase-config.js',
   './data.js', './engine.js', './store.js', './derive.js', './sync.js', './photos.js',
-  './actions.js', './render.js', './celebrate.js', './main.js',
+  './actions.js', './sidematch.js', './render.js', './celebrate.js', './main.js',
   './manifest.webmanifest', './logo.png', './icon-192.png',
 ];
 

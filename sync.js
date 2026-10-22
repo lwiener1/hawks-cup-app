@@ -60,6 +60,7 @@ function maybeScheduledClear() {
     s.photos = [];
     s.sessions = base.sessions;
     s.ledger = []; s.sideGameEvents = []; s.feed = [];
+    s.sideMatches = []; s.playoffWinner = null;
     s.clearedOn = SCHEDULED_CLEAR.id;
     s.ui.viewPhotoId = null; s.ui.drafts = {}; s.ui.cardMatchId = null; s.ui.screen = 'cup';
   });

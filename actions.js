@@ -44,6 +44,8 @@ function goScreen(screen) {
 function goBack() {
   update((state) => {
     const s = state.ui.screen;
+    if (s === 'sidedetail') { state.ui.screen = 'side'; return; }
+    if (s === 'sideedit') { state.ui.screen = state.ui.sideDraft && state.ui.sideDraft.id ? 'sidedetail' : 'side'; return; }
     if (s === 'card' && state.ui.cardFrom === 'live') state.ui.screen = 'live';
     else if (s === 'card' && state.ui.cardFrom === 'verify' && findSession(state.ui.verifySessionId)) state.ui.screen = 'verify';
     else state.ui.screen = (s === 'card' || s === 'setup' || s === 'verify') ? 'rounds' : 'cup';
@@ -434,6 +436,12 @@ function sendFeedPost(text) {
   });
 }
 
+// The tiebreaker of last resort: record which team won a playoff when the cup
+// is level on points and on net stableford. null undoes it.
+function setPlayoff(team) {
+  update((state) => { state.playoffWinner = team === 'L' || team === 'T' ? team : null; });
+}
+
 // ---- manual money -------------------------------------------------------------
 // For anything the app doesn't work out itself (Tobacco Road stakes, side
 // bets, corrections). Whole dollars only.
@@ -566,6 +574,8 @@ function resetTrip(kind) {
     const base = kind === 'sample' ? seedState(state.ui) : freshState(state.ui);
     state.photos = [];
     state.ui.viewPhotoId = null;
+    state.sideMatches = base.sideMatches || [];
+    state.playoffWinner = null;
     state.sessions = base.sessions;
     state.ledger = base.ledger;
     state.sideGameEvents = base.sideGameEvents;

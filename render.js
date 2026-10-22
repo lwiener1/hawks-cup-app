@@ -7,7 +7,7 @@ function esc(str) {
 }
 
 const TABS = [
-  { id: 'cup', name: 'Cup' }, { id: 'rounds', name: 'Rounds' }, { id: 'money', name: 'Money' },
+  { id: 'cup', name: 'Cup' }, { id: 'rounds', name: 'Rounds' }, { id: 'side', name: 'Side' }, { id: 'money', name: 'Money' },
   { id: 'feed', name: 'Feed' }, { id: 'team', name: 'Teams' },
 ];
 
@@ -28,7 +28,16 @@ function headerInfo(state) {
     const game = gameFor(session);
     return { kicker: `${course.name} · ${game.name}`, title: 'Match card', right: `Scoring: ${myName(state)}` };
   }
+  if (screen === 'sidedetail') {
+    const sm = sideById(state, state.ui.sideId);
+    return { kicker: 'Side match', title: sm ? sm.name : 'Side match', right: sm ? sideFormatName(sm.format) : '' };
+  }
+  if (screen === 'sideedit') {
+    const d = state.ui.sideDraft;
+    return { kicker: 'Side match', title: d && d.id ? 'Edit settings' : 'New side match', right: 'Fully custom' };
+  }
   const map = {
+    side: { kicker: 'Individual games', title: 'Side matches', right: `${(state.sideMatches || []).length} game${(state.sideMatches || []).length === 1 ? '' : 's'}` },
     live: { kicker: 'Live scoring', title: 'On the course', right: `${liveMatchSets(state).live.length} live` },
     cup: { kicker: 'Standings', title: 'The Hawks Cup', right: new Date().toLocaleDateString('en-US', { weekday: 'short' }) },
     rounds: { kicker: 'Schedule', title: 'Sessions', right: '4 rounds' },
@@ -52,7 +61,7 @@ function moneyMovedLabel(state) {
 
 function renderHeader(state) {
   const info = headerInfo(state);
-  const showBack = ['card', 'setup', 'trophy', 'verify'].includes(state.ui.screen);
+  const showBack = ['card', 'setup', 'trophy', 'verify', 'sidedetail', 'sideedit'].includes(state.ui.screen);
   const practiceBar = isPractice(state)
     ? `<div style="flex:none;background:var(--accent);color:#fff;text-align:center;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;padding:calc(env(safe-area-inset-top,0px) + 5px) 10px 5px">Practice mode &middot; nothing here counts</div>` : '';
   return `${practiceBar}
@@ -74,9 +83,12 @@ function renderTabBar(state) {
   const screen = state.ui.screen;
   return `
   <div style="flex:none;display:flex;background:var(--rule);gap:1px;border-top:2px solid var(--rule);padding-bottom:env(safe-area-inset-bottom,14px)">
-    ${TABS.map((t) => `
-      <button data-action="go-screen" data-screen="${t.id}" style="flex:1;border:0;background:${screen === t.id ? 'var(--ink)' : 'var(--bg)'};color:${screen === t.id ? 'var(--bg)' : 'rgba(10,16,48,.75)'};font-weight:800;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;padding:12px 2px 10px">${t.name}</button>
-    `).join('')}
+    ${TABS.map((t) => {
+      const on = screen === t.id || (t.id === 'side' && (screen === 'sidedetail' || screen === 'sideedit'));
+      return `
+      <button data-action="go-screen" data-screen="${t.id}" style="flex:1;border:0;background:${on ? 'var(--ink)' : 'var(--bg)'};color:${on ? 'var(--bg)' : 'rgba(10,16,48,.75)'};font-weight:800;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;padding:12px 1px 10px">${t.name}</button>
+    `;
+    }).join('')}
   </div>`;
 }
 
@@ -134,15 +146,20 @@ function renderCup(state) {
   if (anyLiveCup && allCupSet && totals.settled < totals.available) {
     const hi = Math.max(totals.team1, totals.team2), lo = Math.min(totals.team1, totals.team2);
     const tied = totals.team1 === totals.team2;
-    const t1Lead = totals.team1 > totals.team2;
-    const name = tied ? 'Tied — a push' : t1Lead ? state.teamOneName : state.teamTwoName;
-    const color = tied ? 'var(--ink)' : t1Lead ? 'var(--accent)' : 'var(--team2)';
-    const need = tied ? '' : hi >= totals.toWin
-      ? ` ${fmtPoints(totals.toWin)} wins the cup.`
-      : ` Still ${fmtPoints(totals.toWin - hi)} short of the ${fmtPoints(totals.toWin)} needed.`;
+    const tbNow = tied ? stablefordTiebreak(state) : null;
+    // Level on points: the projected winner is whoever leads on net stableford.
+    const t1Lead = tied ? tbNow.leader === 'L' : totals.team1 > totals.team2;
+    const tieNoLeader = tied && !tbNow.leader;
+    const name = tieNoLeader ? 'Level — stableford decides' : t1Lead ? state.teamOneName : state.teamTwoName;
+    const color = tieNoLeader ? 'var(--ink)' : t1Lead ? 'var(--accent)' : 'var(--team2)';
+    const need = tied
+      ? ` Level on points, so net stableford breaks the tie (${esc(teamNickname(state.teamOneName))} ${tbNow.sums.total.L} – ${tbNow.sums.total.T} ${esc(teamNickname(state.teamTwoName))}).`
+      : hi >= totals.toWin
+        ? ` ${fmtPoints(totals.toWin)} wins the cup.`
+        : ` Still ${fmtPoints(totals.toWin - hi)} short of the ${fmtPoints(totals.toWin)} needed.`;
     projectionStrip = `
     <div style="padding:12px 18px;border-bottom:2px solid var(--rule);background:var(--row-alt)">
-      <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)">Projected ${tied ? 'result' : 'winner'} &middot; if every match ended now</div>
+      <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)">Projected ${tieNoLeader ? 'result' : 'winner'} &middot; if every match ended now</div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:3px">
         <div style="font-size:18px;font-weight:800;letter-spacing:-.015em;color:${color}">${esc(name)}</div>
         <div style="font-size:18px;font-weight:800;color:${color};white-space:nowrap">${fmtPoints(hi)} &ndash; ${fmtPoints(lo)}</div>
@@ -150,6 +167,17 @@ function renderCup(state) {
       <div style="font-size:11px;line-height:1.4;color:var(--muted);margin-top:2px">Live matches can still swing.${need}</div>
     </div>`;
   }
+
+  // Net stableford over the singles: the tiebreaker if the cup ends 12-12.
+  const sbCup = stablefordTiebreak(state);
+  const tiebreakStrip = sbCup.started && teamEventStatus(state).via !== 'points' ? `
+    <div style="padding:10px 18px;border-bottom:2px solid var(--rule)">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+        <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)">Tiebreaker &middot; net stableford (singles)</div>
+        <div style="font-size:15px;font-weight:800;white-space:nowrap"><span style="color:var(--accent)">${sbCup.sums.total.L}</span> &ndash; <span style="color:var(--team2)">${sbCup.sums.total.T}</span></div>
+      </div>
+      <div style="font-size:11px;line-height:1.4;color:var(--muted);margin-top:2px">Only used if the cup ends 12&ndash;12. ${sbCup.complete ? 'All singles scores are in.' : `${sbCup.played} of ${sbCup.needed} holes scored.`}</div>
+    </div>` : '';
 
   // Finished matches waiting for someone to submit the final score.
   const waiting = unsubmittedMatches(state);
@@ -211,6 +239,7 @@ function renderCup(state) {
       <span>${fmtPoints(totals.settled)} of ${fmtPoints(totals.available)} settled</span><span>${fmtPoints(totals.toWin)} wins the cup</span>
     </div>
     ${projectionStrip}
+    ${tiebreakStrip}
     ${submitStrip}
     <div style="padding:14px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">On the course now</div>
     ${liveRows}
@@ -734,26 +763,38 @@ function renderMoney(state) {
     // Team event status
     const te = teamEventStatus(state);
     const t1 = esc(teamNickname(state.teamOneName)), t2 = esc(teamNickname(state.teamTwoName));
-    let teHead, teText;
+    let teHead, teText, teExtra = '';
+    const sb = te.tb || stablefordTiebreak(state);
+    const sbLine = `Net stableford (singles): ${t1} ${sb.sums.total.L} &ndash; ${sb.sums.total.T} ${t2}`;
     if (te.state === 'won') {
       const w = te.winner === 'L' ? t1 : t2;
       teHead = `${w} win the cup`;
-      teText = `Settled at $${te.stake} a man: each ${w} player collects $${te.stake}, each loser pays $${te.stake}. It's already in the balances below.`;
-    } else if (te.state === 'push') {
-      teHead = 'Tied — push';
-      teText = `${fmtPoints(te.team1)}–${fmtPoints(te.team2)} with every point in. Nobody pays on the team event.`;
+      const how = te.via === 'points' ? '' : te.via === 'playoff' ? ' It was level at 12–12 and a playoff decided it.' : ` It was level at 12–12 and ${te.via} decided it (${sbLine.replace(/&ndash;/g, '–')}).`;
+      teText = `Settled at $${te.stake} a man: each ${w} player collects $${te.stake}, each loser pays $${te.stake}. It's already in the balances below.${how}`;
+      if (te.via === 'playoff') teExtra = `<button data-action="set-playoff" data-team="" style="margin-top:8px;border:1px solid var(--rule);background:transparent;font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:8px 10px;color:var(--ink)">Undo playoff result</button>`;
+    } else if (te.state === 'tiebreak') {
+      teHead = `Level at ${fmtPoints(te.team1)} – ${fmtPoints(te.team2)}`;
+      if (te.needPlayoff) {
+        teText = `Every point is in and net stableford is level too, so it takes a playoff. Record the winner to settle the $${te.stake} a man.`;
+        teExtra = `<div style="display:flex;gap:8px;margin-top:8px">
+          <button data-action="set-playoff" data-team="L" style="flex:1;border:1px solid var(--rule);background:transparent;font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:9px 6px;color:var(--ink)">${t1} won</button>
+          <button data-action="set-playoff" data-team="T" style="flex:1;border:1px solid var(--rule);background:transparent;font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:9px 6px;color:var(--ink)">${t2} won</button></div>`;
+      } else {
+        teText = `Every point is in and it's level, so net stableford in the singles decides it once every score is entered. ${sbLine}.`;
+      }
     } else {
       teHead = `${fmtPoints(te.team1)} – ${fmtPoints(te.team2)}`;
-      teText = `$${te.stake} a man on the team event — pays out automatically when a team clinches ${fmtPoints(te.toWin)}. A 12–12 tie is a push.`;
+      teText = `$${te.stake} a man on the team event — pays out automatically when a team clinches ${fmtPoints(te.toWin)}. If it ends 12–12, net stableford in the singles breaks the tie.`;
     }
     const teCard = `
       <div style="padding:14px 18px;border-bottom:2px solid var(--rule);background:var(--row-alt)">
         <div style="display:flex;justify-content:space-between;align-items:baseline">
           <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Team event · $${te.stake} a man</div>
-          <div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">${te.state === 'open' ? 'Open' : te.state === 'push' ? 'Push' : 'Settled'}</div>
+          <div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">${te.state === 'open' ? 'Open' : te.state === 'tiebreak' ? 'Tiebreak' : 'Settled'}</div>
         </div>
         <div style="font-size:18px;font-weight:800;margin-top:4px">${teHead}</div>
         <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7);margin-top:4px">${teText}</div>
+        ${teExtra}
       </div>`;
 
     // Recent hand-entered money and match payouts (hole fines, greenies and CTPs
@@ -1070,7 +1111,7 @@ function renderLiveBar(state) {
 }
 
 const SCREEN_RENDERERS = {
-  live: renderLive, cup: renderCup, rounds: renderRounds, setup: renderSetup, card: renderCard,
+  live: renderLive, side: renderSideList, sidedetail: renderSideDetail, sideedit: renderSideEdit, cup: renderCup, rounds: renderRounds, setup: renderSetup, card: renderCard,
   money: renderMoney, feed: renderFeed, team: renderTeams, trophy: renderTrophy, verify: renderVerify,
 };
 
@@ -1130,7 +1171,7 @@ let scrollTopRequested = false;
 function requestScrollTop() { scrollTopRequested = true; }
 
 const PRESERVED_FIELDS = ['feed-input', 'hcp-input',
-  'money-player', 'money-dir', 'money-amount', 'money-note', 'payout-winner', 'payout-amount'];
+  'money-player', 'money-dir', 'money-amount', 'money-note', 'payout-winner', 'payout-amount'].concat(SIDE_FIELD_IDS);
 
 function render() {
   const state = getState();
