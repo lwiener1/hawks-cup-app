@@ -95,19 +95,43 @@ function computeSide(state, sm) {
     });
   });
 
-  // only holes everyone has a score for count, so nobody is judged on a
-  // different set of holes
-  const counted = [];
-  holes.forEach((h, i) => { if (players.length && players.every((id) => cells[id][i].has)) counted.push(i); });
+  // Every side match is a Nassau: three bets over the holes you picked, the
+  // front half, the back half and the whole thing, each scored the same way.
+  // Only holes everyone has a score for count, so nobody is judged on a
+  // different set of holes.
+  const n = holes.length;
+  const half = Math.ceil(n / 2);
+  const range = (from, to) => Array.from({ length: Math.max(0, to - from) }, (_, k) => from + k);
+  const eighteen = n === 18, twoRounds = n === 36 && sm.sessionIds.length === 2;
+  const defs = [
+    { key: 'front', label: eighteen ? 'Front 9' : twoRounds ? 'Round 1' : 'First half', idx: range(0, half) },
+    { key: 'back', label: eighteen ? 'Back 9' : twoRounds ? 'Round 2' : 'Second half', idx: range(half, n) },
+    { key: 'total', label: 'Overall', idx: range(0, n) },
+  ].filter((d) => d.idx.length);
+  const segments = defs.map((d) => Object.assign({ key: d.key, label: d.label, idx: d.idx }, sideSegment(sm, players, cells, d.idx)));
+  const total = segments.find((s) => s.key === 'total') || { counted: [], tot: {}, complete: false, matchHoles: {}, standings: [], status: 'Not started', leaders: [], size: 0 };
+
+  // The headline (standings, status, hole table) is the overall bet.
+  return {
+    sm, holes, players, strokes, cells, segments, nassau: true,
+    counted: total.counted, tot: total.tot, complete: total.complete, total: n, thru: total.counted.length,
+    matchHoles: total.matchHoles, matchDiff: total.matchDiff, standings: total.standings, status: total.status, leaders: total.leaders,
+  };
+}
+
+// One bet of the Nassau: a set of hole indexes scored for the players.
+function sideSegment(sm, players, cells, idx) {
+  const counted = idx.filter((i) => players.length && players.every((id) => cells[id][i].has));
+  const size = idx.length;
   const tot = {};
   players.forEach((id) => {
     const t = { gross: 0, net: 0, pts: 0, par: 0 };
     counted.forEach((i) => { const c = cells[id][i]; t.gross += c.gross; t.net += c.net; t.pts += c.pts; t.par += c.par; });
     tot[id] = t;
   });
-  const complete = holes.length > 0 && counted.length === holes.length;
-
-  const out = { sm, holes, players, strokes, cells, counted, tot, complete, total: holes.length, thru: counted.length, matchHoles: [], standings: [], status: '', leaders: [] };
+  const complete = size > 0 && counted.length === size;
+  const out = { size, counted, tot, complete, matchHoles: {}, standings: [], status: '', leaders: [] };
+  const name = (id) => PLAYERS_BY_ID[id].name;
 
   if (sm.format === 'match' && players.length === 2) {
     const [a, b] = players;
@@ -117,10 +141,9 @@ function computeSide(state, sm) {
       out.matchHoles[i] = r;
       diff += r;
     });
-    const remaining = holes.length - counted.length;
+    const remaining = size - counted.length;
     const decided = Math.abs(diff) > remaining && counted.length > 0;
     const final = complete || decided;
-    const name = (id) => PLAYERS_BY_ID[id].name;
     const lead = diff > 0 ? a : b;
     if (!counted.length) out.status = 'Not started';
     else if (final && diff === 0) out.status = 'Halved';
@@ -137,8 +160,9 @@ function computeSide(state, sm) {
     if (!counted.length) out.status = 'Not started';
     else {
       const best = out.standings[0].value;
-      const leaders = out.standings.filter((s) => s.value === best).map((s) => PLAYERS_BY_ID[s.pid].name);
-      const val = sm.format === 'stableford' ? `${best} pts` : `${best}${tot[out.standings[0].pid].par ? ` (${best - tot[out.standings[0].pid].par > 0 ? '+' : ''}${best - tot[out.standings[0].pid].par === 0 ? 'E' : best - tot[out.standings[0].pid].par})` : ''}`;
+      const leaders = out.standings.filter((s) => s.value === best).map((s) => name(s.pid));
+      const par = tot[out.standings[0].pid].par, d = best - par;
+      const val = sm.format === 'stableford' ? `${best} pts` : `${best}${par ? ` (${d === 0 ? 'E' : d > 0 ? '+' + d : d})` : ''}`;
       out.status = `${complete ? '' : 'Leading: '}${leaders.join(' & ')}${leaders.length > 1 ? ' tied at ' : ' '}${val}${complete ? (leaders.length > 1 ? '' : ' wins') : ` thru ${counted.length}`}`;
     }
   }
@@ -157,9 +181,20 @@ function sideSplit(amount, n) {
   return Array.from({ length: n }, (_, i) => base + (i < extra ? 1 : 0));
 }
 
-// Net money for each player once the game is over: prize minus his stake.
+// Net money for each player across the three Nassau bets: for each bet, the
+// prize he wins minus his stake. A bet with no scores yet doesn't count.
 function sideMoney(sm, calc) {
-  const players = calc.players;
+  const out = {};
+  calc.players.forEach((id) => { out[id] = 0; });
+  calc.segments.forEach((seg) => {
+    const m = sideBetMoney(sm, calc.players, seg);
+    calc.players.forEach((id) => { out[id] += m[id]; });
+  });
+  return out;
+}
+
+// One bet: the pot is every player's stake; winners take it (a tie splits it).
+function sideBetMoney(sm, players, calc) {
   const stake = Math.max(0, Math.round(Number(sm.stake) || 0));
   const out = {};
   players.forEach((id) => { out[id] = 0; });
@@ -185,6 +220,12 @@ function sideMoney(sm, calc) {
   });
   players.forEach((id) => { out[id] = prizes[id] - stake; });
   return out;
+}
+
+// The per-bet result, for display next to each Nassau line.
+function sideBetPot(sm, calc) {
+  const stake = Math.max(0, Math.round(Number(sm.stake) || 0));
+  return stake * calc.players.length;
 }
 
 // ---- actions --------------------------------------------------------------------
@@ -304,12 +345,13 @@ function settleSide(id) {
     const calc = computeSide(s, sm);
     const money = sideMoney(sm, calc);
     const group = uid('sgrp'), ts = Date.now();
-    const detail = `${sm.name}: ${calc.status}`;
+    const detail = `${sm.name} (Nassau)`;
+    const bets = calc.segments.map((seg) => `${seg.label}: ${seg.status}`).join(' · ');
     calc.players.forEach((pid) => {
       if (money[pid]) s.ledger.push({ id: uid('ldg'), kind: 'side', group, sideId: sm.id, playerId: pid, amount: money[pid], detail, ts });
     });
     sm.settled = { group, ts, by: s.ui.me || null };
-    s.feed.unshift({ id: uid('fd'), author: 'Hawks Cup', isSystem: true, ts, text: `Side match settled — ${detail}.` });
+    s.feed.unshift({ id: uid('fd'), author: 'Hawks Cup', isSystem: true, ts, text: `Side match settled — ${sm.name}. ${bets}.` });
   });
 }
 function unsettleSide(id) {
@@ -335,7 +377,7 @@ function handleSideAction(a) {
       const sm = sideById(getState(), a.id);
       if (!sm) return true;
       const calc = computeSide(getState(), sm);
-      if (!calc.complete && !confirm('This game isn\'t finished yet. Post the money for how it stands now?')) return true;
+      if (!calc.segments.every((seg) => seg.complete) && !confirm('Not every bet in this Nassau is finished yet. Post the money for how they stand now?')) return true;
       settleSide(a.id);
       return true;
     }
@@ -374,21 +416,21 @@ function renderSideList(state) {
   const cards = list.map((sm) => {
     const calc = computeSide(state, sm);
     const names = calc.players.map((id) => PLAYERS_BY_ID[id].name).join(', ');
-    const stake = Number(sm.stake) && sm.payout !== 'none' ? ` &middot; $${sm.stake} each` : '';
+    const stake = Number(sm.stake) && sm.payout !== 'none' ? ` &middot; $${sm.stake} a bet` : '';
     return `
     <button data-action="side-open" data-id="${sm.id}" style="display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--rule);background:transparent;padding:14px 18px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
         <div style="font-size:16px;font-weight:800;letter-spacing:-.01em">${esc(sm.name)}</div>
         <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:${sm.settled ? 'var(--muted)' : calc.complete ? 'var(--accent)' : 'var(--ink)'}">${sm.settled ? 'Paid' : calc.complete ? 'Final' : calc.thru ? 'In play' : 'Waiting'}</div>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(sideFormatName(sm.format))} &middot; ${esc(sideBasisName(sm))} &middot; ${esc(sideRoundsName(state, sm))}, ${esc(sideRangeName(sm))}${stake}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">Nassau &middot; ${esc(sideFormatName(sm.format))} &middot; ${esc(sideBasisName(sm))} &middot; ${esc(sideRoundsName(state, sm))}, ${esc(sideRangeName(sm))}${stake}</div>
       <div style="font-size:12px;margin-top:6px">${esc(names)}</div>
       <div style="font-size:13px;font-weight:800;margin-top:4px;color:var(--accent)">${esc(calc.status)}</div>
     </button>`;
   }).join('');
   return `
   <div>
-    <div style="padding:14px 18px;border-bottom:2px solid var(--rule);font-size:12px;line-height:1.5;color:rgba(10,16,48,.7)">Your own games on the side of the team event: pick the players, the round and holes, match play, stableford or stroke play, and a stake. The app scores them from the scores already entered in the team matches, so there is nothing extra to type.</div>
+    <div style="padding:14px 18px;border-bottom:2px solid var(--rule);font-size:12px;line-height:1.5;color:rgba(10,16,48,.7)">Your own games on the side of the team event. Every one is a Nassau: three bets (front, back and overall), each scored as match play, stableford or stroke play, with a stake on each bet. The app scores them from the scores already entered in the team matches, so there is nothing extra to type.</div>
     <div style="padding:14px 18px;border-bottom:2px solid var(--rule)">
       <button data-action="side-new" class="btn btn-primary btn-block">New side match</button>
     </div>
@@ -455,10 +497,22 @@ function renderSideDetail(state) {
   }).join('');
   const subLabel = sm.format === 'stableford' ? 'small number = stableford points' : 'small number = net score';
 
+  // The three Nassau bets, each with its own result and pot
+  const pot = sideBetPot(sm, calc);
+  const nassauRows = calc.segments.map((seg) => `
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:10px 18px;border-bottom:1px solid var(--rule)">
+      <div style="min-width:0">
+        <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:${seg.complete ? 'var(--ink)' : 'var(--muted)'}">${esc(seg.label)}${seg.complete ? ' &middot; final' : ''}</div>
+        <div style="font-size:13px;font-weight:800;margin-top:2px;color:var(--accent)">${esc(seg.status)}</div>
+      </div>
+      ${stakeOn ? `<div style="font-size:11px;font-weight:800;color:var(--muted);white-space:nowrap">$${pot} pot</div>` : ''}
+    </div>`).join('');
+
+  const allFinal = calc.segments.every((seg) => seg.complete);
   const settleBlock = !stakeOn ? '' : `
     <div style="padding:14px 18px;border-top:2px solid var(--rule)">
       <div style="${SD_LABEL}">Money</div>
-      <div style="font-size:12px;line-height:1.5;color:rgba(10,16,48,.7);margin:4px 0 10px">$${sm.stake} each, $${Number(sm.stake) * calc.players.length} pot, ${esc(SIDE_PAYOUTS.find((p) => p.id === sm.payout).name.toLowerCase())}. ${sm.settled ? 'The money is in the ledger.' : calc.complete ? 'Finished. Post the money to the ledger when you\'re ready.' : 'Posts to the ledger when you tap the button (best after it finishes).'}</div>
+      <div style="font-size:12px;line-height:1.5;color:rgba(10,16,48,.7);margin:4px 0 10px">$${sm.stake} a bet from each player, $${pot} a pot, three bets, ${esc(SIDE_PAYOUTS.find((p) => p.id === sm.payout).name.toLowerCase())}. ${sm.settled ? 'The money is in the ledger.' : allFinal ? 'All three bets are final. Post the money to the ledger when you\'re ready.' : 'Posts to the ledger when you tap the button (best after all three bets are final).'}</div>
       ${sm.settled
         ? `<button data-action="side-unsettle" data-id="${sm.id}" class="btn btn-secondary btn-block">Take the money back out</button>`
         : `<button data-action="side-settle" data-id="${sm.id}" class="btn btn-primary btn-block">Post the money to the ledger</button>`}
@@ -467,11 +521,14 @@ function renderSideDetail(state) {
   return `
   <div>
     <div style="padding:14px 18px;border-bottom:2px solid var(--rule)">
-      <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">${esc(sideFormatName(sm.format))} &middot; ${esc(sideBasisName(sm))}</div>
+      <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Nassau &middot; ${esc(sideFormatName(sm.format))} &middot; ${esc(sideBasisName(sm))}</div>
       <div style="font-size:12px;line-height:1.5;color:rgba(10,16,48,.7);margin-top:3px">${esc(sideRoundsName(state, sm))}, ${esc(sideRangeName(sm))}${sm.notes ? ` &middot; ${esc(sm.notes)}` : ''}</div>
       <div style="font-size:20px;font-weight:800;letter-spacing:-.015em;margin-top:8px;color:var(--accent)">${esc(calc.status)}</div>
       <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-top:2px">${calc.thru} of ${calc.total} holes scored for everyone</div>
     </div>
+    <div style="padding:12px 18px 6px;${SD_LABEL}">The three bets</div>
+    ${nassauRows}
+    <div style="padding:12px 18px 6px;${SD_LABEL}">Overall standings${stakeOn ? ' &middot; money across all three bets' : ''}</div>
     ${rows}
     ${calc.total ? `
     <div style="padding:14px 0 6px;border-top:2px solid var(--rule)">
@@ -539,6 +596,7 @@ function renderSideEdit(state) {
 
   return `
   <div>
+    <div style="padding:12px 18px;background:var(--row-alt);border-bottom:1px solid var(--rule);font-size:12px;line-height:1.5;color:rgba(10,16,48,.75)"><strong style="letter-spacing:.08em;text-transform:uppercase;color:var(--accent)">Nassau.</strong> Every side match is three bets: the front half, the back half and the overall total of the holes you pick (front 9 / back 9 / overall for 18 holes; round 1 / round 2 / overall for two rounds), scored the way you choose below.</div>
     ${section('Name', input('sd-name', d.name, 'text', 'maxlength="40" placeholder="e.g. Lenny v Alex, Sat stableford"'))}
     ${section('Players', playerChips + note(d.format === 'match' ? 'Match play needs exactly 2 players.' : 'Two or more players.'))}
     ${section('Round(s)', sessionChips + note('Pick one, or several to play them as one game. Scores come from the team matches in those rounds.'))}
@@ -546,7 +604,7 @@ function renderSideEdit(state) {
     ${section('Format', choice('sd-format', SIDE_FORMATS, d.format) + note(formatNote))}
     ${section('Scoring', choice('sd-basis', SIDE_BASES, d.basis) + note(basisNote) + basisExtra)}
     ${ptsBlock}
-    ${section('Money', `<label style="${SD_LABEL}">Stake per player ($)${input('sd-stake', d.stake, 'number', 'min="0" max="1000"')}</label><div style="${SD_LABEL};margin:12px 0 6px">Payout</div>${choice('sd-payout', SIDE_PAYOUTS, d.payout)}${note(payoutNote + ' Nothing hits the ledger until you tap Post the money on the game.')}`)}
+    ${section('Money', `<label style="${SD_LABEL}">Stake per bet, per player ($)${input('sd-stake', d.stake, 'number', 'min="0" max="1000"')}</label>${note('Every side match is a Nassau: three bets (front, back, overall). Each bet has its own pot of this stake from every player.')}<div style="${SD_LABEL};margin:12px 0 6px">Payout (each bet)</div>${choice('sd-payout', SIDE_PAYOUTS, d.payout)}${note(payoutNote + ' Nothing hits the ledger until you tap Post the money on the game.')}`)}
     ${section('Notes (optional)', input('sd-notes', d.notes, 'text', 'maxlength="80" placeholder="e.g. loser buys dinner"'))}
     <div style="display:flex;gap:8px;padding:16px 18px 30px">
       <button data-action="${d.id ? 'side-open' : 'go-screen'}" data-id="${d.id || ''}" data-screen="side" class="btn btn-secondary" style="flex:1">Cancel</button>

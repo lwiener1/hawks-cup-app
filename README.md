@@ -49,8 +49,9 @@ too, a playoff winner is recorded in the app. No countbacks. See
 `stablefordTiebreak` in `derive.js`.
 
 Side matches (the Side tab, `sidematch.js`): optional individual games on top of
-the team event. Match play, stableford or stroke play, net / gross / custom
-strokes, any players, rounds and holes, a stake and payout. They are scored from
+the team event. Every one is a Nassau (front, back, overall bets, each with its own
+pot). Match play, stableford or stroke play, net / gross / custom strokes, any
+players, rounds and holes, a stake per bet and a payout. They are scored from
 the gross scores already entered in the team matches and synced as `sm_*` docs.
 
 Without a Firebase config the app still works, saving on that phone only.
