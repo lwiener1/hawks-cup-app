@@ -304,7 +304,24 @@ function stepHole(matchId, delta) {
   });
 }
 
-function postHoleAndAdvance(matchId) {
+// Which of the conflicting scores is right: choose per player, then confirm.
+function chooseConflict(playerId, which) {
+  update((state) => {
+    const c = state.ui.scoreConflict;
+    if (c) c.choice[playerId] = which === 'posted' ? 'posted' : 'mine';
+  });
+}
+function cancelConflict() {
+  update((state) => { state.ui.scoreConflict = null; });
+}
+function confirmConflict() {
+  const c = getState().ui.scoreConflict;
+  if (!c) return;
+  if (!c.items.every((it) => c.choice[it.playerId])) { showNotice('Pick the correct score for each player first.'); return; }
+  postHoleAndAdvance(c.matchId, Object.assign({}, c.choice));
+}
+
+function postHoleAndAdvance(matchId, resolved) {
   if (matchIsLocked(matchId)) return;
   update((state) => {
     const match = matchById(matchId);
@@ -318,6 +335,37 @@ function postHoleAndAdvance(matchId) {
     }
 
     const ids = match.sideA.concat(match.sideB);
+
+    // Two people scoring the same match can end up entering different scores for
+    // the same player on the same hole. If this hole was already posted by
+    // someone else and what's about to be posted differs, stop and ask which is right.
+    const posted = match.holeBy && match.holeBy[hole.n];
+    const conflicts = [];
+    if (posted && posted.by !== (state.ui.me || null)) {
+      ids.forEach((id) => {
+        const ex = match.grossScores[id] && match.grossScores[id][hole.n];
+        if (ex != null && ex !== v.gross[id]) conflicts.push({ playerId: id, posted: ex, mine: v.gross[id] });
+      });
+    }
+    if (conflicts.length && !(resolved && conflicts.every((c) => resolved[c.playerId]))) {
+      state.ui.scoreConflict = {
+        matchId, holeN: hole.n, by: posted.name || 'Someone', byId: posted.by || null, ts: posted.ts,
+        items: conflicts, choice: Object.assign({}, resolved || {}),
+      };
+      return;
+    }
+    let conflictNote = '';
+    if (conflicts.length) {
+      conflictNote = ` Score conflict on hole ${hole.n}: ` + conflicts.map((c) => {
+        const keptPosted = resolved[c.playerId] === 'posted';
+        if (keptPosted) v.gross[c.playerId] = c.posted;
+        return `${PLAYERS_BY_ID[c.playerId].name} was ${c.posted} (${posted.name || 'someone'}) vs ${c.mine} (${myName(state)}), confirmed as ${keptPosted ? c.posted : c.mine}.`;
+      }).join(' ');
+    }
+    state.ui.scoreConflict = null;
+    match.holeBy = match.holeBy || {};
+    match.holeBy[hole.n] = { by: state.ui.me || null, name: myName(state), ts: Date.now() };
+
     ids.forEach((id) => {
       match.grossScores[id] = match.grossScores[id] || {};
       match.grossScores[id][hole.n] = v.gross[id];
@@ -412,7 +460,7 @@ function postHoleAndAdvance(matchId) {
     } else {
       text = `${shortA} vs ${shortB}, through ${results.length}: ${nassau}.`;
     }
-    state.feed.unshift({ id: uid('fd'), author: 'Hawks Cup', isSystem: true, text: text + hammerNote, ts: Date.now() });
+    state.feed.unshift({ id: uid('fd'), author: 'Hawks Cup', isSystem: true, text: text + hammerNote + conflictNote, ts: Date.now() });
 
     setViewedHole(state, matchId, Math.min(course.holes.length - 1, v.holeIdx + 1));
     requestScrollTop();

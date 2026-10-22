@@ -27,6 +27,9 @@ document.addEventListener('click', (ev) => {
     case 'go-to-hole': goToHole(a.match, Number(a.idx)); break;
     case 'step-hole': stepHole(a.match, Number(a.delta)); break;
     case 'post-hole': postHoleAndAdvance(a.match); break;
+    case 'conflict-choose': chooseConflict(a.player, a.which); break;
+    case 'conflict-confirm': confirmConflict(); break;
+    case 'conflict-cancel': cancelConflict(); break;
     case 'submit-match':
       if (confirm('Submit the final score for this match? Once submitted it is locked, and changing it needs the unlock code.')) submitMatch(a.match);
       break;

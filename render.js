@@ -834,7 +834,44 @@ function renderMoney(state) {
   return `<div><div style="display:flex;gap:1px;background:var(--rule);border-bottom:2px solid var(--rule)">${tabs}</div>${body}</div>`;
 }
 
-const MONEY_LABEL = 'font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)';
+// Two people entered different scores for the same player on the same hole.
+function renderConflictModal(state) {
+  const c = state.ui.scoreConflict;
+  if (!c) return '';
+  const match = matchById(c.matchId);
+  if (!match) return '';
+  const course = courseFor(sessionForMatch(c.matchId));
+  const when = c.ts ? new Date(c.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+  const me = myName(state);
+  const rows = c.items.map((it) => {
+    const name = PLAYERS_BY_ID[it.playerId].name;
+    const pick = c.choice[it.playerId];
+    const btn = (which, big, small) => `<button data-action="conflict-choose" data-player="${it.playerId}" data-which="${which}" style="flex:1;border:2px solid ${pick === which ? 'var(--accent)' : 'var(--rule)'};background:${pick === which ? 'var(--accent)' : 'var(--bg)'};color:${pick === which ? '#fff' : 'var(--ink)'};padding:10px 6px;text-align:center"><div style="font-size:24px;font-weight:800;line-height:1">${big}</div><div style="font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;margin-top:4px">${small}</div></button>`;
+    return `
+    <div style="border-top:1px solid var(--rule);padding-top:10px">
+      <div style="font-size:14px;font-weight:800;margin-bottom:8px">${esc(name)}</div>
+      <div style="display:flex;gap:8px">
+        ${btn('posted', it.posted, `${esc(c.by)}'s${when ? ' (' + esc(when) + ')' : ''}`)}
+        ${btn('mine', it.mine, `${esc(me)}'s (yours)`)}
+      </div>
+    </div>`;
+  }).join('');
+  const ready = c.items.every((it) => c.choice[it.playerId]);
+  return `
+  <div class="modal-backdrop" style="z-index:150">
+    <div class="modal-sheet" data-action="noop" style="max-height:92vh;overflow-y:auto">
+      <div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Score conflict &middot; hole ${c.holeN} &middot; ${esc(course.name)}</div>
+      <div style="font-size:14px;line-height:1.5"><strong>${esc(c.by)}</strong> already posted ${c.items.length === 1 ? 'a different score' : 'different scores'} for this hole than the ${c.items.length === 1 ? 'one' : 'ones'} you just entered. Check the card and tap the correct ${c.items.length === 1 ? 'score' : 'score for each player'}.</div>
+      ${rows}
+      <div style="display:flex;gap:10px;margin-top:6px">
+        <button data-action="conflict-cancel" class="btn btn-secondary" style="flex:1">Go back</button>
+        <button data-action="conflict-confirm" class="btn btn-primary" style="flex:1;${ready ? '' : 'opacity:.45'}">Confirm scores</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+const MONEY_LABEL ='font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)';
 
 function renderMoneyModal(state) {
   const kind = state.ui.moneyModal;
@@ -1183,6 +1220,7 @@ function render() {
   if (ui.screen === 'setup' && !findSession(ui.setupSessionId)) ui.screen = 'rounds';
   if (ui.screen === 'verify' && !findSession(ui.verifySessionId)) ui.screen = 'rounds';
   if (ui.viewPhotoId && !state.photos.some((p) => p.id === ui.viewPhotoId)) ui.viewPhotoId = null;
+  if (ui.scoreConflict && !matchById(ui.scoreConflict.matchId)) ui.scoreConflict = null;
 
   // Re-rendering replaces the DOM, so carry over scroll position and any
   // half-typed text — otherwise a teammate's score arriving mid-keystroke
@@ -1207,6 +1245,7 @@ function render() {
       ${renderTabBar(state)}
     </div>
     ${renderMoneyModal(state)}
+    ${renderConflictModal(state)}
     ${renderHcpModal(state)}
     ${renderPhotoViewer(state)}
     ${needsWelcome ? renderWelcome(state) : ''}

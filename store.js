@@ -12,7 +12,7 @@ function uid(prefix) { return prefix + '_' + Math.random().toString(36).slice(2,
 function defaultUi() {
   return {
     screen: 'cup', moneyTab: 'games', setupSessionId: 's3', cardMatchId: null,
-    joinMode: 'live', moneyModal: null, sideId: null, sideDraft: null, drafts: {}, me: null, tripCode: null, hcpEditPlayer: null,
+    joinMode: 'live', moneyModal: null, sideId: null, sideDraft: null, scoreConflict: null, drafts: {}, me: null, tripCode: null, hcpEditPlayer: null,
     verifySessionId: null, viewPhotoId: null, photoZoom: 1, cardFrom: 'rounds',
   };
 }
