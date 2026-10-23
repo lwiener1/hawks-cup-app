@@ -65,16 +65,16 @@ function renderHeader(state) {
   const practiceBar = isPractice(state)
     ? `<div style="flex:none;background:var(--accent);color:#fff;text-align:center;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;padding:calc(env(safe-area-inset-top,0px) + 5px) 10px 5px">Practice mode &middot; nothing here counts</div>` : '';
   return `${practiceBar}
-  <div style="flex:none;padding:${practiceBar ? '10px' : 'env(safe-area-inset-top,20px)'} 18px 10px;border-bottom:2px solid var(--rule);display:flex;align-items:flex-end;gap:10px;background:var(--bg)">
-    <button data-action="go-back" style="display:${showBack ? 'flex' : 'none'};align-items:center;justify-content:center;width:26px;height:26px;padding:0;margin-bottom:2px;border:1px solid var(--rule);background:transparent;color:var(--ink);font-size:14px;line-height:1">&larr;</button>
-    <img src="./logo.png" alt="Hawks" width="38" height="36" style="flex:none;display:${showBack ? 'none' : 'block'};width:38px;height:36px;margin-bottom:1px">
+  <div style="flex:none;padding:${practiceBar ? '10px' : 'env(safe-area-inset-top,20px)'} 20px 12px;display:flex;align-items:center;gap:12px;background:var(--bg)">
+    <button data-action="go-back" style="display:${showBack ? 'flex' : 'none'};align-items:center;justify-content:center;width:36px;height:36px;padding:0;border:1px solid var(--rule);border-radius:50%;background:transparent;color:var(--ink);font-size:17px;line-height:1">&larr;</button>
+    <img src="./logo.png" alt="Hawks" width="38" height="36" style="flex:none;display:${showBack ? 'none' : 'block'};width:38px;height:36px">
     <div style="flex:1;min-width:0">
-      <div style="font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--accent)">${esc(info.kicker)}</div>
-      <div style="font-size:21px;font-weight:800;letter-spacing:-.015em;line-height:1.1">${esc(info.title)}</div>
+      <div style="font-size:13px;font-weight:600;color:var(--muted);line-height:1.2">${esc(info.kicker)}</div>
+      <div style="font-size:22px;font-weight:800;letter-spacing:-.015em;line-height:1.15">${esc(info.title)}</div>
     </div>
-    <div style="text-align:right;padding-bottom:3px;white-space:nowrap">
-      <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">${esc(info.right)}</div>
-      ${SYNC_LABELS[Sync.status] ? `<div style="font-size:8px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:${SYNC_LABELS[Sync.status][1]}">&bull; ${SYNC_LABELS[Sync.status][0]}</div>` : ''}
+    <div style="text-align:right;white-space:nowrap">
+      <div style="font-size:13px;font-weight:700;color:var(--muted)">${esc(info.right)}</div>
+      ${SYNC_LABELS[Sync.status] ? `<div style="font-size:12px;font-weight:700;color:${SYNC_LABELS[Sync.status][1]}">&bull; ${SYNC_LABELS[Sync.status][0]}</div>` : ''}
     </div>
   </div>`;
 }
@@ -82,11 +82,11 @@ function renderHeader(state) {
 function renderTabBar(state) {
   const screen = state.ui.screen;
   return `
-  <div style="flex:none;display:flex;background:var(--rule);gap:1px;border-top:2px solid var(--rule);padding-bottom:env(safe-area-inset-bottom,14px)">
+  <div style="flex:none;display:flex;gap:2px;background:var(--bg);border-top:1px solid var(--rule);padding:6px 6px calc(env(safe-area-inset-bottom,14px) + 2px)">
     ${TABS.map((t) => {
       const on = screen === t.id || (t.id === 'side' && (screen === 'sidedetail' || screen === 'sideedit'));
       return `
-      <button data-action="go-screen" data-screen="${t.id}" style="flex:1;border:0;background:${on ? 'var(--ink)' : 'var(--bg)'};color:${on ? 'var(--bg)' : 'rgba(10,16,48,.75)'};font-weight:800;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;padding:12px 1px 10px">${t.name}</button>
+      <button data-action="go-screen" data-screen="${t.id}" style="flex:1;border:0;border-radius:12px;background:${on ? 'var(--accent)' : 'transparent'};color:${on ? '#fff' : 'var(--muted)'};font-weight:${on ? 800 : 700};font-size:12.5px;padding:11px 0">${t.name}</button>
     `;
     }).join('')}
   </div>`;
@@ -100,7 +100,7 @@ function holeFill(r) {
 function nassauChips(segments) {
   return `<div style="display:flex;gap:1px;background:var(--rule);border:1px solid var(--rule);margin-top:9px">${segments.map((s) => `
     <div style="flex:1;min-width:0;background:var(--bg);padding:5px 6px">
-      <div style="font-size:8px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:rgba(10,16,48,.45)">${s.label}${s.final ? ' &middot; final' : ''}</div>
+      <div style="font-size:8px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:rgba(10,16,48,.45)">${s.label}${s.final ? ' &check;' : ''}</div>
       <div style="font-size:11px;font-weight:800;color:${s.color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.text)}</div>
     </div>`).join('')}</div>`;
 }
@@ -114,84 +114,158 @@ function holeStrip(results, totalHoles) {
 }
 
 // ---------- Cup ----------
+// Layout: the projected score (clearly labelled), your own match, the net
+// stableford tiebreaker as its own section, anything waiting to be submitted,
+// the other matches, then the rounds.
+function sectionTitle(text, right) {
+  return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:22px 20px 6px"><div style="font-size:16px;font-weight:800;letter-spacing:-.01em">${text}</div>${right ? `<div style="font-size:13px;color:var(--muted)">${right}</div>` : ''}</div>`;
+}
+
 function renderCup(state) {
   const totals = cupTotals(state.sessions);
   const pct = (n) => `${(n / (totals.available || 1)) * 100}%`;
-  const live = allMatches(state).filter(({ label }) => !label.done && label.text !== 'Not started');
+  const nick1 = esc(teamNickname(state.teamOneName)), nick2 = esc(teamNickname(state.teamTwoName));
+  const allDone = totals.available > 0 && totals.settled >= totals.available;
 
-  const liveRows = live.map(({ session, course, match, results, label }) => {
-    const shortA = playerNames(match.sideA), shortB = playerNames(match.sideB);
-    const lbl = matchStateLabel(results, course.holes.length, sideShortLabel(state, session, match.sideA), sideShortLabel(state, session, match.sideB), maxPerHole(match.format));
-    return `
-    <button data-action="open-card" data-match="${match.id}" style="display:block;width:100%;text-align:left;border:0;border-top:1px solid var(--rule);background:transparent;padding:12px 18px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
-        <div style="font-size:14px;font-weight:800;letter-spacing:-.01em">${esc(shortA)}</div>
-        <div style="font-size:13px;font-weight:800;color:${lbl.color};white-space:nowrap">${esc(lbl.text)}</div>
+  // ---- the score: it counts every match as it stands right now ----
+  const scoreBlock = `
+    <div style="padding:20px 20px 4px">
+      <div style="font-size:13px;font-weight:700;color:var(--accent)">${allDone ? 'Final score' : 'Projected score &middot; if every match ended now'}</div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:12px">
+        <div style="min-width:0">
+          <div style="font-size:14px;font-weight:600;color:var(--muted);line-height:1.2">${esc(state.teamOneName)}</div>
+          <div style="font-size:68px;font-weight:800;line-height:.95;letter-spacing:-.04em;color:var(--accent)">${fmtPoints(totals.team1)}</div>
+        </div>
+        <div style="text-align:right;min-width:0">
+          <div style="font-size:14px;font-weight:600;color:var(--muted);line-height:1.2">${esc(state.teamTwoName)}</div>
+          <div style="font-size:68px;font-weight:800;line-height:.95;letter-spacing:-.04em;color:var(--team2)">${fmtPoints(totals.team2)}</div>
+        </div>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:3px">
-        <div style="font-size:14px;font-weight:800;letter-spacing:-.01em;color:rgba(10,16,48,.75)">${esc(shortB)}</div>
-        <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">thru ${results.length}</div>
+      <div style="display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--rule-soft);margin-top:14px">
+        <div style="width:${pct(totals.team1)};background:var(--accent)"></div>
+        <div style="flex:1"></div>
+        <div style="width:${pct(totals.team2)};background:var(--team2)"></div>
       </div>
-      ${holeStrip(results, course.holes.length)}
-      ${nassauChips(lbl.segments)}
-    </button>`;
-  }).join('') || `<div style="padding:14px 18px;font-size:13px;color:var(--muted)">Nothing live right now.</div>`;
+      <div style="display:flex;justify-content:space-between;gap:10px;font-size:13px;color:var(--muted);margin-top:8px">
+        <span>Settled so far: <strong style="color:var(--ink)">${fmtPoints(totals.settled1)} &ndash; ${fmtPoints(totals.settled2)}</strong></span>
+        <span>${fmtPoints(totals.toWin)} wins the cup</span>
+      </div>
+    </div>`;
 
-  // Projected winner: once every team-event round is set and something is
-  // still being played, show who wins if each match finished as it stands now.
+  // ---- projected winner: once every team-event round is set and play is on ----
   const cupSessions = state.sessions.filter((s) => sessionCounts(s));
   const anyLiveCup = cupSessions.some((s) => sessionStatus(s) === 'in-play');
   const allCupSet = cupSessions.every((s) => sessionStatus(s) !== 'not-set');
-  let projectionStrip = '';
+  let projection = '';
   if (anyLiveCup && allCupSet && totals.settled < totals.available) {
-    const hi = Math.max(totals.team1, totals.team2), lo = Math.min(totals.team1, totals.team2);
+    const hi = Math.max(totals.team1, totals.team2);
     const tied = totals.team1 === totals.team2;
     const tbNow = tied ? stablefordTiebreak(state) : null;
-    // Level on points: the projected winner is whoever leads on net stableford.
     const t1Lead = tied ? tbNow.leader === 'L' : totals.team1 > totals.team2;
     const tieNoLeader = tied && !tbNow.leader;
     const name = tieNoLeader ? 'Level — stableford decides' : t1Lead ? state.teamOneName : state.teamTwoName;
-    const color = tieNoLeader ? 'var(--ink)' : t1Lead ? 'var(--accent)' : 'var(--team2)';
+    const color = tieNoLeader ? 'var(--ink)' : t1Lead ? 'var(--accent)' : 'var(--team2-text)';
     const need = tied
-      ? ` Level on points, so net stableford breaks the tie (${esc(teamNickname(state.teamOneName))} ${tbNow.sums.total.L} – ${tbNow.sums.total.T} ${esc(teamNickname(state.teamTwoName))}).`
-      : hi >= totals.toWin
-        ? ` ${fmtPoints(totals.toWin)} wins the cup.`
-        : ` Still ${fmtPoints(totals.toWin - hi)} short of the ${fmtPoints(totals.toWin)} needed.`;
-    projectionStrip = `
-    <div style="padding:12px 18px;border-bottom:2px solid var(--rule);background:var(--row-alt)">
-      <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)">Projected ${tieNoLeader ? 'result' : 'winner'} &middot; if every match ended now</div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:3px">
-        <div style="font-size:18px;font-weight:800;letter-spacing:-.015em;color:${color}">${esc(name)}</div>
-        <div style="font-size:18px;font-weight:800;color:${color};white-space:nowrap">${fmtPoints(hi)} &ndash; ${fmtPoints(lo)}</div>
-      </div>
-      <div style="font-size:11px;line-height:1.4;color:var(--muted);margin-top:2px">Live matches can still swing.${need}</div>
+      ? `Level on points, so net stableford breaks the tie (${nick1} ${tbNow.sums.total.L} – ${tbNow.sums.total.T} ${nick2}).`
+      : hi >= totals.toWin ? `${fmtPoints(totals.toWin)} wins the cup.` : `Still ${fmtPoints(totals.toWin - hi)} short of the ${fmtPoints(totals.toWin)} needed.`;
+    projection = `
+    <div style="margin:14px 20px 0;background:var(--row-alt);border-radius:12px;padding:14px 16px">
+      <div style="font-size:13px;color:var(--muted)">${tieNoLeader ? 'Projected result' : 'Projected winner'}</div>
+      <div style="font-size:19px;font-weight:800;letter-spacing:-.01em;color:${color};margin-top:2px">${esc(name)}</div>
+      <div style="font-size:13px;line-height:1.45;color:var(--muted);margin-top:3px">${need} Live matches can still swing.</div>
     </div>`;
   }
 
-  // Net stableford over the singles: the tiebreaker if the cup ends 12-12.
-  const sbCup = stablefordTiebreak(state);
-  const tiebreakStrip = sbCup.started && teamEventStatus(state).via !== 'points' ? `
-    <div style="padding:10px 18px;border-bottom:2px solid var(--rule)">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
-        <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)">Tiebreaker &middot; net stableford (singles)</div>
-        <div style="font-size:15px;font-weight:800;white-space:nowrap"><span style="color:var(--accent)">${sbCup.sums.total.L}</span> &ndash; <span style="color:var(--team2)">${sbCup.sums.total.T}</span></div>
-      </div>
-      <div style="font-size:11px;line-height:1.4;color:var(--muted);margin-top:2px">Only used if the cup ends 12&ndash;12. ${sbCup.complete ? 'All singles scores are in.' : `${sbCup.played} of ${sbCup.needed} holes scored.`}</div>
-    </div>` : '';
+  // ---- your match ----
+  const me = state.ui.me;
+  const all = allMatches(state);
+  const mineAll = me ? all.filter((e) => !e.match.submitted && e.match.sideA.concat(e.match.sideB).includes(me)) : [];
+  const mine = mineAll.find((e) => e.results.length && !matchComplete(e.match, e.course))
+    || mineAll.find((e) => !matchComplete(e.match, e.course)) || mineAll[0] || null;
+  let mineBlock = '';
+  if (mine) {
+    const { session, course, match, results } = mine;
+    const lbl = matchStateLabel(results, course.holes.length, sideShortLabel(state, session, match.sideA), sideShortLabel(state, session, match.sideB), maxPerHole(match.format));
+    const done = matchComplete(match, course);
+    const next = Math.min(course.holes.length, results.length + 1);
+    mineBlock = `
+    <div style="margin:18px 20px 0;border:3px solid var(--accent);border-radius:18px;padding:16px 16px 18px;background:var(--bg)">
+      <div style="font-size:13px;font-weight:800;color:var(--accent)">Your match &middot; ${esc(course.name)}</div>
+      <div style="font-size:22px;font-weight:800;letter-spacing:-.01em;line-height:1.2;margin-top:4px">${esc(playerNames(match.sideA))} <span style="color:var(--muted);font-weight:600">vs</span> ${esc(playerNames(match.sideB))}</div>
+      <div style="font-size:30px;font-weight:800;letter-spacing:-.02em;margin-top:8px;color:${results.length ? lbl.color : 'var(--muted)'}">${esc(results.length ? lbl.text : 'Not started')}</div>
+      <div style="font-size:15px;color:var(--muted);font-weight:600">${results.length ? `Through ${results.length} hole${results.length === 1 ? '' : 's'}` : 'Ready to tee off'}</div>
+      <button data-action="open-card" data-match="${match.id}" class="btn btn-primary btn-block" style="margin-top:14px;padding:16px;font-size:18px">${done ? 'Submit final score' : results.length ? `Score hole ${next}` : 'Start scoring'}</button>
+    </div>`;
+  }
 
-  // Finished matches waiting for someone to submit the final score.
-  const waiting = unsubmittedMatches(state);
-  const submitStrip = waiting.length ? `
-    <div style="padding:12px 18px 4px;border-bottom:2px solid var(--rule);background:var(--row-alt)">
-      <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Finished &middot; needs submitting</div>
-      ${waiting.map(({ session, match }) => `
-      <button data-action="open-card" data-match="${match.id}" style="display:flex;width:100%;justify-content:space-between;align-items:center;gap:10px;text-align:left;border:0;border-top:1px solid var(--rule);background:transparent;padding:9px 0;margin-top:8px">
-        <span style="font-size:13px;font-weight:800">${esc(playerNames(match.sideA))} v ${esc(playerNames(match.sideB))}</span>
-        <span style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);white-space:nowrap">Submit &rarr;</span>
+  // ---- net stableford over the singles: its own section ----
+  const sbCup = stablefordTiebreak(state);
+  let stablefordBlock = '';
+  if (sbCup.started) {
+    const lines = [];
+    state.sessions.forEach((session) => {
+      if (!sessionCounts(session) || session.shape !== 'singles') return;
+      session.matches.forEach((m) => {
+        const a = m.sideA[0], b = m.sideB[0];
+        const ra = ownStableford(a, session, m), rb = ownStableford(b, session, m);
+        lines.push({ a, b, pa: ra.total, pb: rb.total, thru: Math.min(ra.holes, rb.holes) });
+      });
+    });
+    const rows = lines.map((l) => `
+      <div style="display:flex;align-items:baseline;padding:9px 0;border-top:1px solid var(--rule-faint)">
+        <div style="flex:1;font-size:15px;font-weight:${l.pa > l.pb ? 800 : 500}">${esc(PLAYERS_BY_ID[l.a].name)} <span style="font-variant-numeric:tabular-nums">${l.pa}</span></div>
+        <div style="font-size:12px;color:var(--muted);padding:0 8px">thru ${l.thru}</div>
+        <div style="flex:1;font-size:15px;text-align:right;font-weight:${l.pb > l.pa ? 800 : 500}"><span style="font-variant-numeric:tabular-nums">${l.pb}</span> ${esc(PLAYERS_BY_ID[l.b].name)}</div>
+      </div>`).join('');
+    stablefordBlock = `
+    ${sectionTitle('Net stableford &middot; singles', 'tiebreaker')}
+    <div style="margin:0 20px;background:var(--row-alt);border-radius:12px;padding:14px 16px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end">
+        <div><div style="font-size:13px;color:var(--muted)">${nick1}</div><div style="font-size:40px;font-weight:800;line-height:1;letter-spacing:-.03em;color:var(--accent)">${sbCup.sums.total.L}</div></div>
+        <div style="text-align:right"><div style="font-size:13px;color:var(--muted)">${nick2}</div><div style="font-size:40px;font-weight:800;line-height:1;letter-spacing:-.03em;color:var(--team2)">${sbCup.sums.total.T}</div></div>
+      </div>
+      <div style="font-size:13px;line-height:1.45;color:var(--muted);margin:8px 0 6px">Only used if the cup ends 12&ndash;12. ${sbCup.complete ? 'All singles scores are in.' : `${sbCup.played} of ${sbCup.needed} holes scored.`}</div>
+      ${rows}
+    </div>`;
+  }
+
+  // ---- finished matches waiting to be submitted ----
+  const waiting = unsubmittedMatches(state).filter((w) => !mine || w.match.id !== mine.match.id);
+  const submitBlock = waiting.length ? `
+    ${sectionTitle('Needs submitting', `${waiting.length} finished`)}
+    <div style="margin:0 20px;background:var(--row-alt);border-radius:12px;padding:4px 16px">
+      ${waiting.map(({ match }, i) => `
+      <button data-action="open-card" data-match="${match.id}" style="display:flex;width:100%;justify-content:space-between;align-items:center;gap:10px;text-align:left;border:0;${i ? 'border-top:1px solid var(--rule-faint);' : ''}background:transparent;padding:13px 0">
+        <span style="font-size:15px;font-weight:700">${esc(playerNames(match.sideA))} v ${esc(playerNames(match.sideB))}</span>
+        <span style="font-size:14px;font-weight:800;color:var(--accent);white-space:nowrap">Submit &rarr;</span>
       </button>`).join('')}
     </div>` : '';
 
-  const sessionRows = state.sessions.map((session, idx) => {
+  // ---- the other matches ----
+  const others = all.filter(({ label, match }) => !label.done && label.text !== 'Not started' && !match.submitted && (!mine || match.id !== mine.match.id));
+  const otherRows = others.map(({ session, course, match, results }) => {
+    const lbl = matchStateLabel(results, course.holes.length, sideShortLabel(state, session, match.sideA), sideShortLabel(state, session, match.sideB), maxPerHole(match.format));
+    const bets = lbl.segments.map((s) => `${s.label.replace(' 9', '')} ${s.text}`).join(' · ');
+    return `
+    <button data-action="open-card" data-match="${match.id}" style="display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--rule-soft);background:transparent;padding:14px 20px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+        <div style="font-size:17px;font-weight:700">${esc(playerNames(match.sideA))}</div>
+        <div style="font-size:16px;font-weight:800;color:${lbl.color};white-space:nowrap">${esc(lbl.text)}</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:1px">
+        <div style="font-size:15px;color:var(--muted);font-weight:500">${esc(playerNames(match.sideB))}</div>
+        <div style="font-size:13px;color:var(--muted)">thru ${results.length}</div>
+      </div>
+      <div style="height:4px;background:var(--rule-soft);border-radius:2px;margin-top:10px;overflow:hidden"><div style="width:${Math.round(results.length / course.holes.length * 100)}%;height:100%;background:var(--accent);border-radius:2px"></div></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(bets)}</div>
+    </button>`;
+  }).join('');
+  const onCourse = (mine || others.length)
+    ? `${sectionTitle(mine ? 'Also on the course' : 'On the course')}${otherRows || `<div style="padding:0 20px 8px;font-size:14px;color:var(--muted)">No other matches right now.</div>`}`
+    : `${sectionTitle('On the course')}<div style="padding:0 20px 8px;font-size:14px;color:var(--muted)">Nothing live right now.</div>`;
+
+  // ---- the rounds ----
+  const sessionRows = state.sessions.map((session) => {
     const course = courseFor(session);
     const status = sessionStatus(session);
     const game = gameFor(session);
@@ -204,48 +278,29 @@ function renderCup(state) {
     } else if (status === 'in-play') { result = 'Live'; resColor = counts ? 'var(--accent)' : 'var(--ink)'; }
     const fmt = `${game.name} · ${counts ? sessionPointValue(session) + ' pts' : 'no team pts'}`;
     return `
-    <button data-action="${status === 'not-set' ? 'open-setup' : 'open-rounds'}" data-session="${session.id}" style="display:flex;width:100%;gap:12px;align-items:center;text-align:left;border:0;border-top:1px solid var(--rule);background:${idx % 2 ? 'var(--row-alt)' : 'transparent'};padding:11px 18px">
-      <div style="font-size:11px;font-weight:800;color:rgba(10,16,48,.35);width:14px">${session.n}</div>
+    <button data-action="${status === 'not-set' ? 'open-setup' : 'open-rounds'}" data-session="${session.id}" style="display:flex;width:100%;gap:12px;align-items:center;text-align:left;border:0;border-bottom:1px solid var(--rule-soft);background:transparent;padding:13px 20px">
       <div style="flex:1;min-width:0">
-        <div style="font-size:14px;font-weight:800;letter-spacing:-.01em">${esc(course.name)}</div>
-        <div style="font-size:11px;color:var(--muted)">${esc(fmt)}</div>
+        <div style="font-size:16px;font-weight:700">${esc(course.name)}</div>
+        <div style="font-size:13px;color:var(--muted)">${esc(fmt)}</div>
       </div>
       <div style="text-align:right">
-        <div style="font-size:14px;font-weight:800;color:${resColor}">${esc(result)}</div>
-        <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">${esc(session.day)}</div>
+        <div style="font-size:16px;font-weight:800;color:${resColor}">${esc(result)}</div>
+        <div style="font-size:13px;color:var(--muted)">${esc(session.day)}</div>
       </div>
     </button>`;
   }).join('');
 
   return `
   <div style="display:flex;flex-direction:column">
-    <div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:20px 18px 18px;border-bottom:2px solid var(--rule)">
-      <div>
-        <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:2px">${esc(state.teamOneName)}</div>
-        <div style="font-size:62px;font-weight:800;line-height:.9;letter-spacing:-.04em;color:var(--accent)">${fmtPoints(totals.team1)}</div>
-      </div>
-      <div style="font-size:11px;font-weight:800;letter-spacing:.1em;color:rgba(10,16,48,.35);padding:0 6px">V</div>
-      <div style="text-align:right">
-        <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:2px">${esc(state.teamTwoName)}</div>
-        <div style="font-size:62px;font-weight:800;line-height:.9;letter-spacing:-.04em;color:var(--team2)">${fmtPoints(totals.team2)}</div>
-      </div>
-    </div>
-    <div style="display:flex;height:8px;border-bottom:2px solid var(--rule)">
-      <div style="width:${pct(totals.team1)};background:var(--accent)"></div>
-      <div style="width:${pct(Math.max(0, totals.available - totals.team1 - totals.team2))};background:var(--rule-soft)"></div>
-      <div style="width:${pct(totals.team2)};background:var(--team2)"></div>
-    </div>
-    <div style="display:flex;justify-content:space-between;padding:7px 18px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-bottom:2px solid var(--rule)">
-      <span>${fmtPoints(totals.settled)} of ${fmtPoints(totals.available)} settled</span><span>${fmtPoints(totals.toWin)} wins the cup</span>
-    </div>
-    ${projectionStrip}
-    ${tiebreakStrip}
-    ${submitStrip}
-    <div style="padding:14px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">On the course now</div>
-    ${liveRows}
-    <div style="border-top:2px solid var(--rule);padding:14px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Sessions</div>
+    ${scoreBlock}
+    ${projection}
+    ${mineBlock}
+    ${stablefordBlock}
+    ${submitBlock}
+    ${onCourse}
+    ${sectionTitle('Rounds')}
     ${sessionRows}
-    <button data-action="go-screen" data-screen="trophy" class="btn btn-secondary btn-block" style="margin:16px 18px 24px;width:calc(100% - 36px)">Cup projection &amp; awards &rarr;</button>
+    <button data-action="go-screen" data-screen="trophy" class="btn btn-secondary btn-block" style="margin:18px 20px 26px;width:calc(100% - 40px)">Cup projection &amp; awards &rarr;</button>
   </div>`;
 }
 
@@ -1072,7 +1127,7 @@ function liveMatchBlock(state, e, mine) {
   const next = Math.min(n, results.length + 1);
   const started = results.length > 0;
   return `
-  <div style="border-top:1px solid var(--rule);padding:13px 18px;${mine ? 'background:var(--row-alt)' : ''}">
+  <div style="${mine ? 'margin:0 20px 10px;border:3px solid var(--accent);border-radius:18px;padding:14px 16px 16px' : 'margin:0 20px 10px;border:1px solid var(--rule);border-radius:16px;padding:14px 16px 16px'}">
     <div style="font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:5px">${esc(course.name)} &middot; ${esc(gameFor(session).name)}${sessionCounts(session) ? '' : ' &middot; not for the cup'}</div>
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
       <div style="font-size:15px;font-weight:800;letter-spacing:-.01em">${esc(playerNames(match.sideA))}</div>
@@ -1095,7 +1150,7 @@ function renderLive(state) {
   const me = state.ui.me;
   const isMine = (e) => me && e.match.sideA.concat(e.match.sideB).includes(me);
   const mineLive = live.concat(notStarted).filter(isMine);
-  const section = (title) => `<div style="padding:14px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">${title}</div>`;
+  const section = (title) => sectionTitle(title);
 
   const mineBlock = mineLive.length
     ? section('Your match') + mineLive.map((e) => liveMatchBlock(state, e, true)).join('')
@@ -1144,7 +1199,7 @@ function renderLiveBar(state) {
   const waiting = unsubmittedMatches(state).length;
   const label = live.length ? `&bull; ${live.length} live` : 'Live';
   const extra = waiting ? ` &middot; ${waiting} to submit` : '';
-  return `<button data-action="go-screen" data-screen="live" style="flex:none;display:flex;justify-content:space-between;align-items:center;width:100%;border:0;border-bottom:2px solid var(--rule);background:${live.length || waiting ? 'var(--accent)' : 'var(--ink)'};color:#fff;padding:9px 18px;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap"><span>${label}${extra}</span><span>Live scoring &rarr;</span></button>`;
+  return `<button data-action="go-screen" data-screen="live" style="flex:none;display:flex;justify-content:space-between;align-items:center;width:calc(100% - 40px);margin:0 20px 6px;border:0;border-radius:999px;background:${live.length || waiting ? 'var(--accent)' : 'var(--ink)'};color:#fff;padding:10px 16px;font-size:13px;font-weight:700;white-space:nowrap"><span>${label}${extra}</span><span>Live scoring &rarr;</span></button>`;
 }
 
 const SCREEN_RENDERERS = {

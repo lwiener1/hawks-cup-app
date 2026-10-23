@@ -8,12 +8,21 @@
   --accent-press: #050c33;
   --team2: #757a88;        /* logo silver: team 2 */
   --team2-text: #4d5262;   /* darker silver, readable as text */
-  --rule: rgba(10, 16, 48, .4);
-  --rule-soft: rgba(10, 16, 48, .18);
+  /* Lines are light and text is a bit stronger, so the page reads as content
+     first and grid second. */
+  --rule: rgba(10, 16, 48, .16);
+  --rule-soft: rgba(10, 16, 48, .12);
   --rule-faint: rgba(10, 16, 48, .07);
-  --muted: rgba(10, 16, 48, .55);
-  --row-alt: #e8eaf0;
+  --muted: rgba(10, 16, 48, .66);
+  --row-alt: #eaecf3;
 }
+
+/* Legibility pass: the app's tiny labels (8-11px, mostly all-caps) are bumped
+   up everywhere, in one place. */
+[style*="font-size:8px"], [style*="font-size:9px"], [style*="font-size:9.5px"], [style*="font-size:10px"] { font-size: 12px !important; }
+[style*="font-size:11px"] { font-size: 13px !important; }
+[style*="font-size:12px"] { font-size: 13.5px !important; }
+[style*="text-transform:uppercase"] { letter-spacing: .06em !important; }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
