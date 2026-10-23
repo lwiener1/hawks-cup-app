@@ -9,6 +9,14 @@ const SIDE_FORMATS = [
   { id: 'match', name: 'Match play', note: 'Head to head, hole by hole. Exactly 2 players.' },
   { id: 'stableford', name: 'Stableford', note: 'Points on every hole, most points wins.' },
   { id: 'stroke', name: 'Stroke play', note: 'Total score, lowest wins.' },
+  { id: 'wolf', name: 'Wolf', note: 'For a foursome (3 or 4 players). The Wolf rotates each hole and picks a partner after seeing the tee shots, or goes alone.' },
+];
+
+// Wolf: points per hole (all editable on the setup form).
+const WOLF_PTS_DEFAULT = { partnerWin: 2, loneWin: 4, loneLoss: 2, blindWin: 6, blindLoss: 3 };
+const WOLF_PT_KEYS = [
+  ['partnerWin', 'Wolf + partner win (each)'], ['loneWin', 'Lone wolf wins'], ['loneLoss', 'Lone wolf loses (each other player)'],
+  ['blindWin', 'Blind wolf wins'], ['blindLoss', 'Blind wolf loses (each other player)'],
 ];
 const SIDE_BASES = [
   { id: 'net', name: 'Net', note: 'Handicap strokes from each player\'s course handicap (strokes off the low player in match play).' },
@@ -33,7 +41,8 @@ const SIDE_POINT_KEYS = [
 // every text/number field on the setup form (render.js keeps them across redraws)
 const SIDE_FIELD_IDS = ['sd-name', 'sd-allowance', 'sd-stake', 'sd-notes', 'sd-from', 'sd-to']
   .concat(SIDE_POINT_KEYS.map((k) => 'sd-pt-' + k[0]))
-  .concat(PLAYERS.map((p) => 'sd-strokes-' + p.id));
+  .concat(PLAYERS.map((p) => 'sd-strokes-' + p.id))
+  .concat(WOLF_PT_KEYS.map((k) => 'sd-wp-' + k[0]));
 
 // ---- scoring --------------------------------------------------------------------
 
@@ -66,13 +75,106 @@ function sideStrokesFor(sm, session) {
   const allow = (Number(sm.allowance) || 100) / 100;
   const ph = {};
   players.forEach((id) => { ph[id] = Math.round(Math.min(courseHandicapFor(id, session), MAX_HCP) * allow); });
-  // match play plays off the low player; stableford and stroke play use each player's own handicap
-  const low = sm.format === 'match' ? Math.min.apply(null, players.map((id) => ph[id])) : 0;
+  // match play and Wolf play off the low player; stableford and stroke play use each player's own handicap
+  const low = (sm.format === 'match' || sm.format === 'wolf') ? Math.min.apply(null, players.map((id) => ph[id])) : 0;
   players.forEach((id) => { out[id] = ph[id] - low; });
   return out;
 }
 
+// ---- Wolf -----------------------------------------------------------------------
+// The Wolf rotates in the order the players were picked. On each hole the Wolf
+// picks a partner (after the tee shots), or plays alone ("lone wolf"), or
+// declares before anyone tees off ("blind wolf", worth more). The side with the
+// best net ball wins the hole. Scores come from the team matches; the Wolf's
+// calls are the only thing entered here.
+function computeWolf(state, sm) {
+  const players = sm.players.filter((id) => PLAYERS_BY_ID[id]);
+  const n = players.length;
+  const table = Object.assign({}, WOLF_PTS_DEFAULT, sm.wolfPts || {});
+  const holes = [];
+  const strokes = {};
+  sideSessions(state, sm).forEach((session) => {
+    strokes[session.id] = sideStrokesFor(sm, session);
+    const course = courseFor(session);
+    course.holes.forEach((hole) => {
+      if (sideHoleInRange(sm, hole.n, course.holes.length)) holes.push({ session, course, hole });
+    });
+  });
+  const cells = {};
+  players.forEach((id) => {
+    cells[id] = holes.map(({ session, hole }) => {
+      const gross = sideGross(session, id, hole.n);
+      if (gross == null) return { has: false };
+      return { has: true, gross, net: gross - shotsOnHole(strokes[session.id][id] || 0, hole.si), par: hole.par };
+    });
+  });
+
+  const pts = {};
+  players.forEach((id) => { pts[id] = 0; });
+  const rows = [];
+  let decided = 0;
+  holes.forEach((h, i) => {
+    let wolf = players[i % n];
+    // optionally the last two holes go to whoever is trailing
+    if (sm.trailing && holes.length >= 4 && i >= holes.length - 2) {
+      const low = Math.min.apply(null, players.map((id) => pts[id]));
+      const trailing = players.filter((id) => pts[id] === low);
+      if (!trailing.includes(wolf)) wolf = trailing[0];
+    }
+    const d = (sm.wolf || {})[h.hole.n] || null;
+    const hasAll = players.every((id) => cells[id][i].has);
+    const row = { i, hole: h.hole, wolf, d, hasAll, state: !hasAll ? 'noscore' : !d ? 'undecided' : 'done', pts: {}, result: null, teamW: [wolf] };
+    players.forEach((id) => { row.pts[id] = 0; });
+    if (row.state === 'done') {
+      const partner = d.mode === 'partner' && d.partner && d.partner !== wolf && players.includes(d.partner) ? d.partner : null;
+      if (d.mode === 'partner' && !partner) {
+        row.state = 'undecided';
+      } else {
+        const teamW = partner ? [wolf, partner] : [wolf];
+        const teamO = players.filter((id) => !teamW.includes(id));
+        const bw = Math.min.apply(null, teamW.map((id) => cells[id][i].net));
+        const bo = Math.min.apply(null, teamO.map((id) => cells[id][i].net));
+        row.teamW = teamW;
+        row.result = bw < bo ? 'wolf' : bw > bo ? 'others' : 'tie';
+        if (row.result === 'wolf') {
+          if (partner) teamW.forEach((id) => { row.pts[id] += table.partnerWin; });
+          else row.pts[wolf] += d.mode === 'blind' ? table.blindWin : table.loneWin;
+        } else if (row.result === 'others') {
+          if (partner) teamO.forEach((id) => { row.pts[id] += table.partnerWin; });
+          else teamO.forEach((id) => { row.pts[id] += d.mode === 'blind' ? table.blindLoss : table.loneLoss; });
+        }
+        players.forEach((id) => { pts[id] += row.pts[id]; });
+        decided += 1;
+      }
+    }
+    rows.push(row);
+  });
+
+  const standings = players.map((id) => ({ pid: id, value: pts[id] })).sort((a, b) => b.value - a.value);
+  let rank = 0, prev = null;
+  standings.forEach((s, i) => { if (s.value !== prev) { rank = i + 1; prev = s.value; } s.rank = rank; });
+  const complete = holes.length > 0 && decided === holes.length;
+  let status = 'Not started';
+  if (decided) {
+    const leaders = standings.filter((s) => s.rank === 1).map((s) => PLAYERS_BY_ID[s.pid].name);
+    status = `${complete ? '' : 'Leading: '}${leaders.join(' & ')}${leaders.length > 1 ? ' tied at ' : ' '}${standings[0].value} pts${complete ? (leaders.length > 1 ? '' : ' wins') : ` thru ${decided}`}`;
+  }
+
+  // money: every player pays every other player the points difference x the stake
+  const stake = Math.max(0, Math.round(Number(sm.stake) || 0));
+  const total = players.reduce((a, id) => a + pts[id], 0);
+  const money = {};
+  players.forEach((id) => { money[id] = (stake && sm.payout !== 'none' && decided) ? stake * (n * pts[id] - total) : 0; });
+
+  return {
+    wolf: true, sm, holes, players, strokes, cells, rows, totals: pts, standings, status, complete, money,
+    counted: rows.filter((r) => r.state === 'done').map((r) => r.i), thru: decided, total: holes.length, leaders: decided ? standings.filter((s) => s.rank === 1).map((s) => s.pid) : [],
+    segments: [{ key: 'wolf', label: 'Wolf', status, complete, counted: [] }],
+  };
+}
+
 function computeSide(state, sm) {
+  if (sm.format === 'wolf') return computeWolf(state, sm);
   const players = sm.players.filter((id) => PLAYERS_BY_ID[id]);
   const table = Object.assign({}, STABLEFORD_STD, sm.points || {});
   const holes = [];
@@ -184,6 +286,7 @@ function sideSplit(amount, n) {
 // Net money for each player across the three Nassau bets: for each bet, the
 // prize he wins minus his stake. A bet with no scores yet doesn't count.
 function sideMoney(sm, calc) {
+  if (calc.wolf) return calc.money;
   const out = {};
   calc.players.forEach((id) => { out[id] = 0; });
   calc.segments.forEach((seg) => {
@@ -237,7 +340,23 @@ function newSideDraft(state) {
   return {
     id: null, name: '', sessionIds: [first.id], range: 'all', from: 1, to: 18, players: [], format: 'stableford', basis: 'net',
     allowance: 100, strokes: {}, points: Object.assign({}, SIDE_PRESETS.standard), stake: 10, payout: 'winner', notes: '',
+    wolfPts: Object.assign({}, WOLF_PTS_DEFAULT), trailing: false,
   };
+}
+
+// A Wolf game for one foursome of a round (used by the Play Wolf buttons at
+// Tobacco Road). The Wolf order alternates the two teams.
+function openSideNewWolf(sessionId, matchId) {
+  update((s) => {
+    const session = findSession(sessionId), m = session && session.matches.find((x) => x.id === matchId);
+    if (!m) return;
+    const d = newSideDraft(s);
+    const order = [];
+    for (let i = 0; i < Math.max(m.sideA.length, m.sideB.length); i++) { if (m.sideA[i]) order.push(m.sideA[i]); if (m.sideB[i]) order.push(m.sideB[i]); }
+    Object.assign(d, { format: 'wolf', sessionIds: [sessionId], players: order, name: `Wolf · ${courseFor(session).name}`, stake: 1, payout: 'winner' });
+    s.ui.sideDraft = d;
+    s.ui.screen = 'sideedit';
+  });
 }
 
 // Pull whatever is typed in the form into the draft (called before any redraw
@@ -253,6 +372,8 @@ function captureSideFields() {
   SIDE_POINT_KEYS.forEach(([k]) => { const v = val('sd-pt-' + k); if (v !== null && v !== '') d.points[k] = Number(v); });
   d.strokes = d.strokes || {};
   PLAYERS.forEach((p) => { const v = val('sd-strokes-' + p.id); if (v !== null && v !== '') d.strokes[p.id] = Number(v); });
+  d.wolfPts = d.wolfPts || Object.assign({}, WOLF_PTS_DEFAULT);
+  WOLF_PT_KEYS.forEach(([k]) => { const v = val('sd-wp-' + k); if (v !== null && v !== '') d.wolfPts[k] = Number(v); });
 }
 
 function openSideNew() {
@@ -267,6 +388,7 @@ function openSideEdit(id) {
     if (!sm) return;
     const d = JSON.parse(JSON.stringify(sm));
     d.points = Object.assign({}, SIDE_PRESETS.standard, d.points || {});
+    d.wolfPts = Object.assign({}, WOLF_PTS_DEFAULT, d.wolfPts || {});
     d.strokes = d.strokes || {};
     s.ui.sideDraft = d;
     s.ui.screen = 'sideedit';
@@ -280,6 +402,12 @@ function sdSet(field, value) {
     if (!d) return;
     d[field] = value;
     if (field === 'preset' ) { d.points = Object.assign({}, SIDE_PRESETS[value]); delete d.preset; }
+    if (field === 'format' && value === 'wolf') {
+      // Wolf is played in one round: default to Tobacco Road, and to a sensible stake per point
+      const tr = s.sessions.find((x) => x.courseId === 'tobacco-road');
+      if (d.sessionIds.length !== 1) d.sessionIds = [tr ? tr.id : d.sessionIds[0]];
+      if (!d.id && Number(d.stake) > 5) d.stake = 1;
+    }
   });
 }
 function sdToggle(field, value) {
@@ -287,6 +415,7 @@ function sdToggle(field, value) {
   update((s) => {
     const d = s.ui.sideDraft;
     if (!d) return;
+    if (field === 'sessionIds' && d.format === 'wolf') { d.sessionIds = [value]; return; }   // Wolf is one round
     const arr = d[field] || [];
     d[field] = arr.includes(value) ? arr.filter((x) => x !== value) : arr.concat(value);
   });
@@ -303,6 +432,8 @@ function saveSide() {
   const total = (d.sessionIds || []).length;
   if (!total) { showNotice('Pick at least one round for this game.'); return; }
   if (d.format === 'match' && d.players.length !== 2) { showNotice('Match play is head to head: pick exactly 2 players.'); return; }
+  if (d.format === 'wolf' && (d.players.length < 3 || d.players.length > 4)) { showNotice('Wolf is for a foursome: pick 3 or 4 players, in Wolf order.'); return; }
+  if (d.format === 'wolf' && total !== 1) { showNotice('Wolf is played in one round.'); return; }
   if (d.players.length < 2) { showNotice('Pick at least 2 players.'); return; }
   const from = Math.max(1, Math.round(Number(d.from) || 1)), to = Math.min(18, Math.round(Number(d.to) || 18));
   if (d.range === 'custom' && from > to) { showNotice('The first hole has to come before the last hole.'); return; }
@@ -314,12 +445,13 @@ function saveSide() {
       name: (d.name || '').trim() || 'Side match', sessionIds: d.sessionIds.slice(), range: d.range, from, to,
       players: d.players.slice(), format: d.format, basis: d.basis, allowance, strokes: Object.assign({}, d.strokes),
       points: Object.assign({}, SIDE_PRESETS.standard, d.points), stake, payout: d.payout, notes: (d.notes || '').trim(),
+      wolfPts: Object.assign({}, WOLF_PTS_DEFAULT, d.wolfPts), trailing: !!d.trailing,
     };
     let sm = d.id && sideById(s, d.id);
     if (sm) {
-      Object.assign(sm, clean);
+      Object.assign(sm, clean);   // keeps the Wolf's calls already made
     } else {
-      sm = Object.assign({ id: uid('sm'), ts: Date.now(), createdBy: s.ui.me || null, settled: null }, clean);
+      sm = Object.assign({ id: uid('sm'), ts: Date.now(), createdBy: s.ui.me || null, settled: null, wolf: {} }, clean);
       s.sideMatches.push(sm);
     }
     s.ui.sideId = sm.id;
@@ -345,7 +477,7 @@ function settleSide(id) {
     const calc = computeSide(s, sm);
     const money = sideMoney(sm, calc);
     const group = uid('sgrp'), ts = Date.now();
-    const detail = `${sm.name} (Nassau)`;
+    const detail = `${sm.name} (${sm.format === 'wolf' ? 'Wolf' : 'Nassau'})`;
     const bets = calc.segments.map((seg) => `${seg.label}: ${seg.status}`).join(' · ');
     calc.players.forEach((pid) => {
       if (money[pid]) s.ledger.push({ id: uid('ldg'), kind: 'side', group, sideId: sm.id, playerId: pid, amount: money[pid], detail, ts });
@@ -363,9 +495,32 @@ function unsettleSide(id) {
   });
 }
 
+// The Wolf's call for a hole: a partner, lone wolf or blind wolf. Tapping the
+// same call again clears it.
+function wolfPick(smId, holeN, mode, partner) {
+  const sm0 = sideById(getState(), smId);
+  if (sm0 && sm0.settled) { showNotice('This game\'s money is already posted. Take the money back out before changing a call.'); return; }
+  update((s) => {
+    const sm = sideById(s, smId);
+    if (!sm) return;
+    sm.wolf = sm.wolf || {};
+    const cur = sm.wolf[holeN];
+    const same = cur && cur.mode === mode && (mode !== 'partner' || cur.partner === partner);
+    if (same) delete sm.wolf[holeN];
+    else sm.wolf[holeN] = mode === 'partner' ? { mode, partner } : { mode };
+  });
+}
+function wolfGoto(smId, idx) {
+  update((s) => { s.ui.wolfHole = s.ui.wolfHole || {}; s.ui.wolfHole[smId] = idx; });
+}
+
 // Called from main.js's click handler; true if the action was one of ours.
 function handleSideAction(a) {
   switch (a.action) {
+    case 'wolf-start': openSideNewWolf(a.session, a.match); return true;
+    case 'wolf-pick': wolfPick(a.id, Number(a.hole), a.mode, a.partner); return true;
+    case 'wolf-goto': wolfGoto(a.id, Number(a.idx)); return true;
+    case 'sd-trailing': captureSideFields(); update((s) => { if (s.ui.sideDraft) s.ui.sideDraft.trailing = !s.ui.sideDraft.trailing; }); return true;
     case 'side-new': openSideNew(); return true;
     case 'side-open': openSide(a.id); return true;
     case 'side-edit': openSideEdit(a.id); return true;
@@ -416,14 +571,14 @@ function renderSideList(state) {
   const cards = list.map((sm) => {
     const calc = computeSide(state, sm);
     const names = calc.players.map((id) => PLAYERS_BY_ID[id].name).join(', ');
-    const stake = Number(sm.stake) && sm.payout !== 'none' ? ` &middot; $${sm.stake} a bet` : '';
+    const stake = Number(sm.stake) && sm.payout !== 'none' ? ` &middot; $${sm.stake} ${sm.format === 'wolf' ? 'a point' : 'a bet'}` : '';
     return `
     <button data-action="side-open" data-id="${sm.id}" style="display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--rule);background:transparent;padding:14px 18px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
         <div style="font-size:16px;font-weight:800;letter-spacing:-.01em">${esc(sm.name)}</div>
         <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:${sm.settled ? 'var(--muted)' : calc.complete ? 'var(--accent)' : 'var(--ink)'}">${sm.settled ? 'Paid' : calc.complete ? 'Final' : calc.thru ? 'In play' : 'Waiting'}</div>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">Nassau &middot; ${esc(sideFormatName(sm.format))} &middot; ${esc(sideBasisName(sm))} &middot; ${esc(sideRoundsName(state, sm))}, ${esc(sideRangeName(sm))}${stake}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">${sm.format === 'wolf' ? '' : 'Nassau &middot; '}${esc(sideFormatName(sm.format))} &middot; ${esc(sideBasisName(sm))} &middot; ${esc(sideRoundsName(state, sm))}, ${esc(sideRangeName(sm))}${stake}</div>
       <div style="font-size:12px;margin-top:6px">${esc(names)}</div>
       <div style="font-size:13px;font-weight:800;margin-top:4px;color:var(--accent)">${esc(calc.status)}</div>
     </button>`;
@@ -443,6 +598,7 @@ function renderSideDetail(state) {
   const sm = sideById(state, state.ui.sideId);
   if (!sm) return `<div style="padding:22px 18px;font-size:13px;color:var(--muted)">That side match was deleted.<br><br><button data-action="go-screen" data-screen="side" class="btn btn-secondary">Back to side matches</button></div>`;
   const calc = computeSide(state, sm);
+  if (calc.wolf) return renderWolfDetail(state, sm, calc);
   const money = sideMoney(sm, calc);
   const stakeOn = Number(sm.stake) && sm.payout !== 'none';
   const multi = calc.holes.length && new Set(calc.holes.map((h) => h.session.id)).size > 1;
@@ -549,6 +705,116 @@ function renderSideDetail(state) {
   </div>`;
 }
 
+function renderWolfDetail(state, sm, calc) {
+  const stakeOn = Number(sm.stake) && sm.payout !== 'none';
+  const nm = (id) => PLAYERS_BY_ID[id].name;
+  const money = calc.money;
+  const course = calc.holes.length ? calc.holes[0].course : null;
+  const sessionName = sideRoundsName(state, sm);
+
+  // standings
+  const rows = calc.standings.map((s) => {
+    const p = PLAYERS_BY_ID[s.pid];
+    const m = money[s.pid];
+    return `
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid var(--rule-soft)">
+      <div style="width:22px;font-size:14px;font-weight:800;color:${s.rank === 1 && calc.thru ? 'var(--accent)' : 'var(--muted)'}">${calc.thru ? s.rank : '&ndash;'}</div>
+      <div style="width:9px;height:9px;flex:none;background:${p.team === 'L' ? 'var(--accent)' : 'var(--team2)'}"></div>
+      <div style="flex:1;min-width:0;font-size:16px;font-weight:700">${esc(p.name)}</div>
+      <div style="text-align:right">
+        <div style="font-size:17px;font-weight:800">${calc.thru ? s.value : '&ndash;'} <span style="font-size:12px;font-weight:600;color:var(--muted)">pts</span></div>
+        ${stakeOn && calc.thru ? `<div style="font-size:13px;font-weight:800;color:${m > 0 ? 'var(--accent)' : m < 0 ? 'var(--muted)' : 'var(--ink)'}">${fmtMoney(m)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  // the hole being called
+  const want = (state.ui.wolfHole || {})[sm.id];
+  let cur = want != null && want >= 0 && want < calc.rows.length ? want : calc.rows.findIndex((r) => r.state !== 'done');
+  if (cur < 0) cur = Math.max(0, calc.rows.length - 1);
+  const row = calc.rows[cur];
+  let holeCard = `<div style="padding:16px 20px;font-size:14px;color:var(--muted)">No holes match this setup. Edit the game and pick a round.</div>`;
+  if (row) {
+    const d = row.d;
+    const sel = (mode, partner) => d && d.mode === mode && (mode !== 'partner' || d.partner === partner);
+    const btn = (label, mode, partner, sub) => `<button data-action="wolf-pick" data-id="${sm.id}" data-hole="${row.hole.n}" data-mode="${mode}" ${partner ? `data-partner="${partner}"` : ''} style="flex:1 1 40%;border:2px solid ${sel(mode, partner) ? 'var(--accent)' : 'var(--rule)'};background:${sel(mode, partner) ? 'var(--accent)' : 'var(--bg)'};color:${sel(mode, partner) ? '#fff' : 'var(--ink)'};border-radius:12px;padding:11px 8px;text-align:center"><div style="font-size:15px;font-weight:800">${esc(label)}</div>${sub ? `<div style="font-size:12px;opacity:.8;margin-top:2px">${sub}</div>` : ''}</button>`;
+    const others = calc.players.filter((id) => id !== row.wolf);
+    const cellLine = calc.players.map((id) => {
+      const c = calc.cells[id][row.i];
+      return `<div style="display:flex;justify-content:space-between;font-size:14px;padding:3px 0"><span style="font-weight:${id === row.wolf ? 800 : 500}">${esc(nm(id))}${id === row.wolf ? ' (Wolf)' : ''}</span><span style="color:var(--muted)">${c.has ? `${c.gross}${c.net !== c.gross ? ` &middot; net ${c.net}` : ''}` : 'no score yet'}</span></div>`;
+    }).join('');
+    let result = '';
+    if (row.state === 'done') {
+      const p = row.pts;
+      const winners = calc.players.filter((id) => p[id] > 0).map((id) => `${nm(id)} +${p[id]}`).join(', ');
+      result = row.result === 'tie' ? 'Halved: no points.' : `${row.result === 'wolf' ? 'Wolf side wins' : 'The others win'}: ${winners}.`;
+    } else if (row.state === 'undecided') {
+      result = row.hasAll ? 'Scores are in. Waiting for the Wolf\'s call.' : (d && d.mode === 'partner' && !d.partner ? 'Pick a partner.' : 'Waiting for scores.');
+    } else {
+      result = d ? 'Call made. Waiting for scores.' : 'Waiting for the Wolf\'s call and scores.';
+    }
+    holeCard = `
+    <div style="margin:0 20px;border:2px solid var(--accent);border-radius:16px;padding:14px 16px 16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <button data-action="wolf-goto" data-id="${sm.id}" data-idx="${Math.max(0, cur - 1)}" style="border:1px solid var(--rule);background:transparent;border-radius:50%;width:36px;height:36px;font-size:17px">&larr;</button>
+        <div style="text-align:center"><div style="font-size:13px;color:var(--muted)">Hole ${row.hole.n} of ${calc.holes.length} &middot; par ${row.hole.par}</div><div style="font-size:20px;font-weight:800">Wolf: ${esc(nm(row.wolf))}</div></div>
+        <button data-action="wolf-goto" data-id="${sm.id}" data-idx="${Math.min(calc.rows.length - 1, cur + 1)}" style="border:1px solid var(--rule);background:transparent;border-radius:50%;width:36px;height:36px;font-size:17px">&rarr;</button>
+      </div>
+      <div style="border-top:1px solid var(--rule-soft);border-bottom:1px solid var(--rule-soft);padding:6px 0;margin:8px 0 12px">${cellLine}</div>
+      <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px">The Wolf's call</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${others.map((id) => { const c = calc.cells[id][row.i]; return btn(nm(id), 'partner', id, c.has ? `${c.gross}${c.net !== c.gross ? ' / net ' + c.net : ''}` : 'partner'); }).join('')}
+        ${btn('Lone wolf', 'lone', null, `${(sm.wolfPts && sm.wolfPts.loneWin) || WOLF_PTS_DEFAULT.loneWin} pts to win`)}
+        ${btn('Blind wolf', 'blind', null, `${(sm.wolfPts && sm.wolfPts.blindWin) || WOLF_PTS_DEFAULT.blindWin} pts, called before tee shots`)}
+      </div>
+      <div style="font-size:14px;line-height:1.45;margin-top:12px;font-weight:700;color:${row.state === 'done' ? 'var(--accent)' : 'var(--muted)'}">${esc(result)}</div>
+    </div>`;
+  }
+
+  // points on every hole
+  const colW = 34;
+  const head = calc.rows.map((r) => `<div data-action="wolf-goto" data-id="${sm.id}" data-idx="${r.i}" style="flex:none;width:${colW}px;text-align:center;font-size:12px;font-weight:800;color:${r.i === cur ? 'var(--accent)' : 'var(--muted)'};padding:3px 0;border-bottom:${r.i === cur ? '2px solid var(--accent)' : '2px solid transparent'};cursor:pointer">${r.hole.n}</div>`).join('');
+  const wolfRow = calc.rows.map((r) => `<div style="flex:none;width:${colW}px;text-align:center;font-size:12px;font-weight:800;color:var(--accent)" title="${esc(nm(r.wolf))}">${esc(nm(r.wolf)[0])}${r.d ? (r.d.mode === 'lone' ? 'L' : r.d.mode === 'blind' ? 'B' : '') : ''}</div>`).join('');
+  const playerRows = calc.players.map((pid) => `
+    <div style="display:flex;align-items:center"><div style="flex:none;width:64px;padding:0 6px 0 20px;font-size:13px;font-weight:700;white-space:nowrap">${esc(nm(pid))}</div><div style="display:flex">${calc.rows.map((r) => `<div style="flex:none;width:${colW}px;text-align:center;font-size:14px;font-weight:800;padding:3px 0;color:${r.state === 'done' ? (r.pts[pid] > 0 ? 'var(--accent)' : 'var(--muted)') : 'var(--rule)'}">${r.state === 'done' ? r.pts[pid] : '&middot;'}</div>`).join('')}</div></div>`).join('');
+
+  const pot = stakeOn ? `
+    <div style="padding:16px 20px;border-top:1px solid var(--rule-soft);margin-top:14px">
+      <div style="font-size:16px;font-weight:800">Money</div>
+      <div style="font-size:13px;line-height:1.5;color:var(--muted);margin:4px 0 10px">$${sm.stake} a point: every player pays every other player $${sm.stake} for each point they're behind. ${sm.settled ? 'The money is in the ledger.' : calc.complete ? 'All holes are done. Post the money when you\'re ready.' : 'Posts to the ledger when you tap the button (best once every hole is done).'}</div>
+      ${sm.settled
+        ? `<button data-action="side-unsettle" data-id="${sm.id}" class="btn btn-secondary btn-block">Take the money back out</button>`
+        : `<button data-action="side-settle" data-id="${sm.id}" class="btn btn-primary btn-block">Post the money to the ledger</button>`}
+    </div>` : '';
+
+  return `
+  <div>
+    <div style="padding:14px 20px 12px">
+      <div style="font-size:13px;font-weight:700;color:var(--accent)">Wolf &middot; ${esc(sideBasisName(sm))}</div>
+      <div style="font-size:13px;color:var(--muted);margin-top:2px">${esc(sessionName)}, ${esc(sideRangeName(sm))}${sm.trailing ? ' &middot; last-place Wolf on the final two holes' : ''}</div>
+      <div style="font-size:22px;font-weight:800;letter-spacing:-.01em;margin-top:8px;color:var(--accent)">${esc(calc.status)}</div>
+      <div style="font-size:13px;color:var(--muted);margin-top:2px">${calc.thru} of ${calc.total} holes decided</div>
+    </div>
+    ${rows}
+    <div style="padding:20px 20px 10px;font-size:16px;font-weight:800">Call the hole</div>
+    ${holeCard}
+    ${calc.rows.length ? `
+    <div style="padding:22px 0 6px">
+      <div style="padding:0 20px 8px;font-size:16px;font-weight:800">Points by hole <span style="font-size:12px;font-weight:600;color:var(--muted)">&middot; L = lone, B = blind</span></div>
+      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><div style="min-width:max-content">
+        <div style="display:flex"><div style="flex:none;width:64px;padding-left:20px;font-size:12px;color:var(--muted);padding-top:3px">Hole</div><div style="display:flex">${head}</div></div>
+        <div style="display:flex"><div style="flex:none;width:64px;padding-left:20px;font-size:12px;color:var(--muted)">Wolf</div><div style="display:flex">${wolfRow}</div></div>
+        ${playerRows}
+      </div></div>
+    </div>` : ''}
+    ${pot}
+    <div style="display:flex;gap:8px;padding:14px 20px 28px;border-top:1px solid var(--rule-soft)">
+      <button data-action="side-edit" data-id="${sm.id}" class="btn btn-secondary" style="flex:1">Edit settings</button>
+      <button data-action="side-delete" data-id="${sm.id}" class="btn btn-secondary" style="flex:1;color:var(--accent);border-color:var(--accent)">Delete</button>
+    </div>
+  </div>`;
+}
+
 function renderSideEdit(state) {
   const d = state.ui.sideDraft;
   if (!d) return `<div style="padding:22px 18px"><button data-action="go-screen" data-screen="side" class="btn btn-secondary">Back to side matches</button></div>`;
@@ -567,8 +833,15 @@ function renderSideEdit(state) {
   }).join('')}</div>`;
   const playerChips = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule);border:1px solid var(--rule)">${PLAYERS.map((p) => {
     const on = d.players.includes(p.id);
-    return `<button data-action="sd-player" data-value="${p.id}" style="display:flex;align-items:center;gap:8px;border:0;background:${on ? 'var(--accent)' : 'var(--bg)'};color:${on ? '#fff' : 'var(--ink)'};font-weight:800;font-size:13px;padding:11px 12px;text-align:left"><span style="width:8px;height:8px;flex:none;background:${on ? '#fff' : p.team === 'L' ? 'var(--accent)' : 'var(--team2)'}"></span>${esc(p.name)}</button>`;
+    const order = d.format === 'wolf' && on ? `<span style="margin-left:auto;font-size:12px;opacity:.9">#${d.players.indexOf(p.id) + 1}</span>` : '';
+    return `<button data-action="sd-player" data-value="${p.id}" style="display:flex;align-items:center;gap:8px;border:0;background:${on ? 'var(--accent)' : 'var(--bg)'};color:${on ? '#fff' : 'var(--ink)'};font-weight:800;font-size:13px;padding:11px 12px;text-align:left"><span style="width:8px;height:8px;flex:none;background:${on ? '#fff' : p.team === 'L' ? 'var(--accent)' : 'var(--team2)'}"></span>${esc(p.name)}${order}</button>`;
   }).join('')}</div>`;
+  const isWolf = d.format === 'wolf';
+
+  const wolfBlock = isWolf ? section('Wolf points', `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${WOLF_PT_KEYS.map(([k, label]) => `<label style="${SD_LABEL}">${label}${input('sd-wp-' + k, (d.wolfPts || {})[k], 'number', 'step="1" min="0"')}</label>`).join('')}</div>
+      ${note('Points are per hole. A halved hole scores nothing. The winning side is the one with the best net ball.')}
+      <button data-action="sd-trailing" style="display:flex;justify-content:space-between;align-items:center;width:100%;margin-top:12px;border:2px solid ${d.trailing ? 'var(--accent)' : 'var(--rule)'};background:${d.trailing ? 'var(--accent)' : 'var(--bg)'};color:${d.trailing ? '#fff' : 'var(--ink)'};border-radius:12px;padding:12px 14px;font-weight:800;font-size:14px;text-align:left"><span>Last two holes: the player in last place is Wolf</span><span>${d.trailing ? 'On' : 'Off'}</span></button>`) : '';
 
   const holesExtra = d.range === 'custom'
     ? `<div style="display:flex;gap:10px;margin-top:8px"><label style="flex:1;${SD_LABEL}">From hole${input('sd-from', d.from, 'number', 'min="1" max="18"')}</label><label style="flex:1;${SD_LABEL}">To hole${input('sd-to', d.to, 'number', 'min="1" max="18"')}</label></div>` : '';
@@ -594,17 +867,27 @@ function renderSideEdit(state) {
   const basisNote = (SIDE_BASES.find((f) => f.id === d.basis) || {}).note;
   const payoutNote = (SIDE_PAYOUTS.find((f) => f.id === d.payout) || {}).note;
 
+  const wolfPayouts = [{ id: 'winner', name: 'Pay per point' }, { id: 'none', name: 'No money' }];
+  const banner = isWolf
+    ? `<strong style="letter-spacing:.08em;text-transform:uppercase;color:var(--accent)">Wolf.</strong> Played within a foursome, one round. Pick the players in Wolf order: the first one picked is Wolf on hole 1, the second on hole 2, and so on. Scores come from the team match; you only enter the Wolf's call on each hole.`
+    : `<strong style="letter-spacing:.08em;text-transform:uppercase;color:var(--accent)">Nassau.</strong> Every side match is three bets: the front half, the back half and the overall total of the holes you pick (front 9 / back 9 / overall for 18 holes; round 1 / round 2 / overall for two rounds), scored the way you choose below.`;
+  const playersNote = isWolf ? 'Wolf is for a foursome: 3 or 4 players. Tap in Wolf order (#1 is Wolf first).' : d.format === 'match' ? 'Match play needs exactly 2 players.' : 'Two or more players.';
+  const moneySection = isWolf
+    ? section('Money', `<label style="${SD_LABEL}">Stake per point ($)${input('sd-stake', d.stake, 'number', 'min="0" max="100"')}</label>${note('Every player pays every other player this much for each point they are behind, so the money always nets to zero.')}<div style="${SD_LABEL};margin:12px 0 6px">Payout</div>${choice('sd-payout', wolfPayouts, d.payout === 'none' ? 'none' : 'winner')}${note('Nothing hits the ledger until you tap Post the money on the game.')}`)
+    : section('Money', `<label style="${SD_LABEL}">Stake per bet, per player ($)${input('sd-stake', d.stake, 'number', 'min="0" max="1000"')}</label>${note('Every side match is a Nassau: three bets (front, back, overall). Each bet has its own pot of this stake from every player.')}<div style="${SD_LABEL};margin:12px 0 6px">Payout (each bet)</div>${choice('sd-payout', SIDE_PAYOUTS, d.payout)}${note(payoutNote + ' Nothing hits the ledger until you tap Post the money on the game.')}`);
+
   return `
   <div>
-    <div style="padding:12px 18px;background:var(--row-alt);border-bottom:1px solid var(--rule);font-size:12px;line-height:1.5;color:rgba(10,16,48,.75)"><strong style="letter-spacing:.08em;text-transform:uppercase;color:var(--accent)">Nassau.</strong> Every side match is three bets: the front half, the back half and the overall total of the holes you pick (front 9 / back 9 / overall for 18 holes; round 1 / round 2 / overall for two rounds), scored the way you choose below.</div>
+    <div style="padding:12px 18px;background:var(--row-alt);border-bottom:1px solid var(--rule);font-size:13px;line-height:1.5;color:rgba(10,16,48,.75)">${banner}</div>
     ${section('Name', input('sd-name', d.name, 'text', 'maxlength="40" placeholder="e.g. Lenny v Alex, Sat stableford"'))}
-    ${section('Players', playerChips + note(d.format === 'match' ? 'Match play needs exactly 2 players.' : 'Two or more players.'))}
-    ${section('Round(s)', sessionChips + note('Pick one, or several to play them as one game. Scores come from the team matches in those rounds.'))}
+    ${section('Players', playerChips + note(playersNote))}
+    ${section('Round(s)', sessionChips + note(isWolf ? 'Wolf is played in one round (Tobacco Road is the usual one). Scores come from the team matches.' : 'Pick one, or several to play them as one game. Scores come from the team matches in those rounds.'))}
     ${section('Holes', choice('sd-range', SIDE_RANGES, d.range) + holesExtra)}
     ${section('Format', choice('sd-format', SIDE_FORMATS, d.format) + note(formatNote))}
     ${section('Scoring', choice('sd-basis', SIDE_BASES, d.basis) + note(basisNote) + basisExtra)}
     ${ptsBlock}
-    ${section('Money', `<label style="${SD_LABEL}">Stake per bet, per player ($)${input('sd-stake', d.stake, 'number', 'min="0" max="1000"')}</label>${note('Every side match is a Nassau: three bets (front, back, overall). Each bet has its own pot of this stake from every player.')}<div style="${SD_LABEL};margin:12px 0 6px">Payout (each bet)</div>${choice('sd-payout', SIDE_PAYOUTS, d.payout)}${note(payoutNote + ' Nothing hits the ledger until you tap Post the money on the game.')}`)}
+    ${wolfBlock}
+    ${moneySection}
     ${section('Notes (optional)', input('sd-notes', d.notes, 'text', 'maxlength="80" placeholder="e.g. loser buys dinner"'))}
     <div style="display:flex;gap:8px;padding:16px 18px 30px">
       <button data-action="${d.id ? 'side-open' : 'go-screen'}" data-id="${d.id || ''}" data-screen="side" class="btn btn-secondary" style="flex:1">Cancel</button>

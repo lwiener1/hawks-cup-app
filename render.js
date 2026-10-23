@@ -306,7 +306,7 @@ function renderCup(state) {
 
 // ---------- Rounds ----------
 function renderRounds(state) {
-  return state.sessions.map((session) => {
+  return `<div style="padding:0 16px">${state.sessions.map((session) => {
     const course = courseFor(session);
     const status = sessionStatus(session);
     const game = gameFor(session);
@@ -341,15 +341,30 @@ function renderRounds(state) {
       }).join('');
     }
 
+    // Wolf (a side game played within a foursome) is offered at Tobacco Road
+    // once the foursomes are set.
+    const wolfButtons = (course.id === 'tobacco-road' && session.matches.length)
+      ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--rule-soft)">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px">Want to play Wolf? <span style="color:var(--muted);font-weight:500">A side game for each foursome.</span></div>
+          ${session.matches.map((m) => `<button data-action="wolf-start" data-session="${session.id}" data-match="${m.id}" class="btn btn-secondary btn-block" style="margin-bottom:6px;text-align:left;padding:11px 12px;font-size:13px">Wolf: ${esc(playerNames(m.sideA.concat(m.sideB)).replace(/ & /g, ', '))}</button>`).join('')}
+        </div>` : '';
+
+    // Each course is its own card with a coloured header, so the four rounds
+    // read as four separate things instead of one long list.
+    const headBg = status === 'in-play' ? 'var(--accent)' : status === 'final' ? '#3b4157' : '#7b8196';
     return `
-    <div style="border-bottom:2px solid var(--rule);padding:14px 18px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
-        <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Session ${session.n} · ${esc(session.day)}</div>
-        <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)">${statusLabel}</div>
+    <div style="margin:16px 0 0;background:#fff;border:1px solid var(--rule);border-radius:18px;overflow:hidden;box-shadow:0 1px 3px rgba(10,16,48,.08),0 6px 16px rgba(10,16,48,.05)">
+      <div style="background:${headBg};color:#fff;padding:14px 16px 14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <div style="font-size:13px;font-weight:700;opacity:.9">Session ${session.n} &middot; ${esc(session.day)}</div>
+          <div style="font-size:12px;font-weight:800;background:rgba(255,255,255,.2);border-radius:999px;padding:3px 10px">${statusLabel}</div>
+        </div>
+        <div style="font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.1;margin-top:6px">${esc(course.name)}</div>
+        <div style="font-size:13px;opacity:.85;margin-top:3px">${esc(fmtLine)}</div>
       </div>
-      <div style="font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.1;margin:2px 0 1px">${esc(course.name)}</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${esc(fmtLine)}</div>
+      <div style="padding:6px 16px 16px">
       ${matchRows}
+      ${wolfButtons}
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
         <button data-action="open-setup" data-session="${session.id}" style="border:1px solid var(--rule);background:transparent;font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:7px 10px;color:var(--ink)">Edit format &amp; pairings</button>
         ${session.matches.length ? (() => {
@@ -358,8 +373,9 @@ function renderRounds(state) {
           return `<button data-action="open-verify" data-session="${session.id}" style="border:1px solid var(--accent);background:${vs === 'ok' ? 'var(--accent)' : 'transparent'};color:${vs === 'ok' ? '#fff' : 'var(--accent)'};font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:7px 10px">Scorecards &amp; verify &middot; ${nPhotos} photo${nPhotos === 1 ? '' : 's'}${tag}</button>`;
         })() : ''}
       </div>
+      </div>
     </div>`;
-  }).join('');
+  }).join('')}<div style="height:24px"></div></div>`;
 }
 
 // A claw hammer drawn in SVG (no emoji, so it takes the team colors and looks
