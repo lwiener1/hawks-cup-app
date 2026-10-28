@@ -7,6 +7,7 @@ document.addEventListener('click', (ev) => {
   switch (a.action) {
     case 'go-screen': goScreen(a.screen); break;
     case 'go-back': goBack(); break;
+    case 'open-help': openHelp(); break;
     case 'open-setup': openSetup(a.session); break;
     case 'open-card': openCard(a.match); break;
     case 'open-rounds': goScreen('rounds'); break;

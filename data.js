@@ -121,7 +121,7 @@ COURSES.forEach((c) => { COURSES_BY_ID[c.id] = c; });
 // shape: 'team' (2v2) or 'singles' (1v1). Every format is played as a Nassau.
 const GAMES = [
   { id: 'fourball', name: 'Fourball', note: 'best net ball', shape: 'team' },
-  { id: 'fourballhammer', name: 'Fourball + hammer', note: 'best net ball, throw the hammer', shape: 'team' },
+  { id: 'fourballhammer', name: 'Fourball + hammer', note: 'Tobacco Road only: best net ball, throw the hammer', shape: 'team', onlyAt: 'tobacco-road' },
   { id: 'lowhigh', name: 'Low ball / high ball', note: '2 pts a hole, net', shape: 'team' },
   { id: 'singles', name: 'Match play', note: 'net, man on man', shape: 'singles' },
 ];
@@ -133,6 +133,10 @@ GAMES_BY_ID.foursomes ={ id: 'foursomes', name: 'Foursomes', note: '', shape: 't
 GAMES_BY_ID.scramble = { id: 'scramble', name: 'Scramble', note: '', shape: 'team' };
 GAMES_BY_ID.netteam = { id: 'netteam', name: 'Net stroke', note: '', shape: 'team' };
 GAMES_BY_ID.netsingles = { id: 'netsingles', name: 'Net stroke', note: '', shape: 'singles' };
+// A game that is restricted to one course (the hammer is Tobacco Road only)
+// is only offered, and only kept, there.
+function gameAllowedAt(game, courseId) { return !game.onlyAt || game.onlyAt === courseId; }
+function gamesForCourse(courseId, shape) { return GAMES.filter((g) => g.shape === shape && gameAllowedAt(g, courseId)); }
 function gameFor(session) { return GAMES_BY_ID[session.format] || GAMES[0]; }
 
 const TAG_TYPES = ['Greenie', 'CTP', 'Gallery rule', 'In the water', 'Whiff', 'Sandbagging confession', 'Lost a club', 'Four-putt', 'Sand to sand', 'Topped tee shot'];

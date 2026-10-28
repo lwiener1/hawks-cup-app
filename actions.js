@@ -41,9 +41,18 @@ function goScreen(screen) {
   update((state) => { state.ui.screen = screen; });
 }
 
+// The help page opens from the ? in the header on any screen; Back returns there.
+function openHelp() {
+  update((state) => {
+    if (state.ui.screen !== 'help') state.ui.helpFrom = state.ui.screen;
+    state.ui.screen = 'help';
+  });
+}
+
 function goBack() {
   update((state) => {
     const s = state.ui.screen;
+    if (s === 'help') { state.ui.screen = state.ui.helpFrom && state.ui.helpFrom !== 'help' ? state.ui.helpFrom : 'cup'; return; }
     if (s === 'sidedetail') { state.ui.screen = 'side'; return; }
     if (s === 'sideedit') { state.ui.screen = state.ui.sideDraft && state.ui.sideDraft.id ? 'sidedetail' : 'side'; return; }
     if (s === 'card' && state.ui.cardFrom === 'live') state.ui.screen = 'live';
@@ -79,6 +88,9 @@ function pickCourse(sessionId, courseId) {
     const session = findSession(sessionId);
     session.courseId = courseId;
     session.teeId = COURSES_BY_ID[courseId].defaultTee;
+    // the hammer only exists at Tobacco Road: moving the round elsewhere drops it
+    const g = GAMES_BY_ID[session.format];
+    if (g && !gameAllowedAt(g, courseId)) session.format = gamesForCourse(courseId, g.shape)[0].id;
   });
 }
 
@@ -94,11 +106,13 @@ function pickShape(sessionId, shape) {
   update((state) => {
     const session = findSession(sessionId);
     session.shape = shape;
-    session.format = GAMES.find((g) => g.shape === shape).id;
+    session.format = gamesForCourse(session.courseId, shape)[0].id;
   });
 }
 
 function pickGame(sessionId, gameId) {
+  const g = GAMES_BY_ID[gameId], session = findSession(sessionId);
+  if (g && !gameAllowedAt(g, session.courseId)) { showNotice(`${g.name} is only played at Tobacco Road.`); return; }
   update((state) => { findSession(sessionId).format = gameId; });
 }
 

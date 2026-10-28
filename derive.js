@@ -262,8 +262,9 @@ function computeAwards(state) {
     ? feats.map((f) => `${PLAYERS_BY_ID[f.playerId].name} (${f.type === 'ace' ? 'ace' : 'albatross'}, ${ordinal(f.holeN)})`).join(', ')
     : 'Nobody yet';
 
+  // The club stays a surprise: its row only appears once somebody has earned it.
   return [
-    { title: 'Hole in one club', detail: 'Aces & albatrosses', who: featWho },
+    ...(feats.length ? [{ title: 'Hole in one club', detail: 'Aces & albatrosses', who: featWho }] : []),
     { title: 'Player of the trip', detail: 'Points won, matches played', who: `${potPlayer.name} · ${fmtPoints(points[potPlayer.id])} pts` },
     { title: 'The Shank', detail: 'Worst single hole of the week', who: shank ? `${PLAYERS_BY_ID[shank.playerId].name} · ${shank.gross} on ${shank.hole}` : 'Nobody yet' },
     { title: 'Deepest pockets', detail: 'Ledger low man', who: `${moneyLow.name} · ${fmtMoney(totals[moneyLow.id])}` },

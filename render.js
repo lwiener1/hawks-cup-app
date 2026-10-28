@@ -28,6 +28,7 @@ function headerInfo(state) {
     const game = gameFor(session);
     return { kicker: `${course.name} · ${game.name}`, title: 'Match card', right: `Scoring: ${myName(state)}` };
   }
+  if (screen === 'help') return { kicker: 'The Hawks Cup', title: 'Help & player guide', right: '' };
   if (screen === 'sidedetail') {
     const sm = sideById(state, state.ui.sideId);
     return { kicker: 'Side match', title: sm ? sm.name : 'Side match', right: sm ? sideFormatName(sm.format) : '' };
@@ -61,7 +62,8 @@ function moneyMovedLabel(state) {
 
 function renderHeader(state) {
   const info = headerInfo(state);
-  const showBack = ['card', 'setup', 'trophy', 'verify', 'sidedetail', 'sideedit'].includes(state.ui.screen);
+  const showBack = ['card', 'setup', 'trophy', 'verify', 'sidedetail', 'sideedit', 'help'].includes(state.ui.screen);
+  const helpBtn = state.ui.screen === 'help' ? '' : `<button data-action="open-help" aria-label="Help and player guide" style="flex:none;width:34px;height:34px;border:2px solid var(--accent);border-radius:50%;background:transparent;color:var(--accent);font-weight:800;font-size:17px;line-height:1;padding:0">?</button>`;
   const practiceBar = isPractice(state)
     ? `<div style="flex:none;background:var(--accent);color:#fff;text-align:center;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;padding:calc(env(safe-area-inset-top,0px) + 5px) 10px 5px">Practice mode &middot; nothing here counts</div>` : '';
   return `${practiceBar}
@@ -76,6 +78,7 @@ function renderHeader(state) {
       <div style="font-size:13px;font-weight:700;color:var(--muted)">${esc(info.right)}</div>
       ${SYNC_LABELS[Sync.status] ? `<div style="font-size:12px;font-weight:700;color:${SYNC_LABELS[Sync.status][1]}">&bull; ${SYNC_LABELS[Sync.status][0]}</div>` : ''}
     </div>
+    ${helpBtn}
   </div>`;
 }
 
@@ -512,7 +515,7 @@ function renderSetup(state) {
     return `<button data-action="pick-shape" data-session="${session.id}" data-shape="${s.id}" style="flex:1;border:0;background:${on ? 'var(--accent)' : 'var(--bg)'};color:${on ? '#fff' : 'var(--ink)'};font-weight:800;font-size:12px;padding:11px 8px;text-align:left">${s.name}</button>`;
   }).join('');
 
-  const gameBtns = GAMES.filter((g) => g.shape === game.shape).map((g) => {
+  const gameBtns = gamesForCourse(session.courseId, game.shape).map((g) => {
     const on = g.id === session.format;
     return `<button data-action="pick-game" data-session="${session.id}" data-game="${g.id}" style="border:0;background:${on ? 'var(--accent)' : 'var(--bg)'};color:${on ? '#fff' : 'var(--ink)'};text-align:left;padding:10px;display:flex;justify-content:space-between;align-items:baseline;gap:8px">
       <span style="font-weight:800;font-size:12px">${g.name}</span><span style="font-size:10px;opacity:.65">${g.note}</span>
@@ -1091,6 +1094,7 @@ function renderTripSettings(state) {
   <div style="border-top:2px solid var(--rule);margin-top:14px;padding:14px 18px 30px;display:flex;flex-direction:column;gap:8px">
     <div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">This phone</div>
     <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7)">Playing as <strong>${esc(myName(state))}</strong>${where ? ` &middot; <strong>${where}</strong>` : syncAvailable() ? '' : ' &middot; saving on this phone only'}.</div>
+    <button data-action="open-help" style="${btn}">Help &amp; player guide</button>
     <button data-action="forget-me" style="${btn}">Not you? Switch player</button>
     ${syncAvailable() ? `<button data-action="change-code" style="${btn}">Switch Practice / Live Tournament</button>` : ''}
     ${live ? `<button data-action="share-invite" style="${btn}">Copy the site link for the group</button>` : ''}
@@ -1131,6 +1135,71 @@ function renderTrophy(state) {
     <div style="padding:14px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Awards on the table</div>
     ${awardRows}
     <div style="height:26px"></div>
+  </div>`;
+}
+
+// ---------- Help / player guide ----------
+function renderHelp(state) {
+  const card = (title, body) => `
+    <div style="margin:12px 16px 0;background:#fff;border:1px solid var(--rule);border-radius:16px;padding:14px 16px;box-shadow:0 1px 3px rgba(10,16,48,.06)">
+      <div style="font-size:16px;font-weight:800;letter-spacing:-.01em;color:var(--accent);margin-bottom:6px">${title}</div>
+      <div style="font-size:14px;line-height:1.5">${body}</div>
+    </div>`;
+  const li = (items) => `<ol style="margin:0;padding-left:20px">${items.map((i) => `<li style="margin:4px 0">${i}</li>`).join('')}</ol>`;
+  const ul = (items) => `<ul style="margin:0;padding-left:18px">${items.map((i) => `<li style="margin:4px 0">${i}</li>`).join('')}</ul>`;
+  const row = (a, b) => `<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--rule-faint)"><div style="flex:none;width:92px;font-weight:800">${a}</div><div style="flex:1;color:rgba(10,16,48,.82)">${b}</div></div>`;
+  const fines = FINE_TYPES.join(' &middot; ');
+  return `
+  <div style="padding-bottom:28px">
+    <div style="padding:6px 20px 0;font-size:14px;line-height:1.5;color:var(--muted)">Everything you need to use the app on the course. Tap <strong style="color:var(--ink)">&larr;</strong> at the top to go back.</div>
+    ${card('Get set up', li([
+      'Open the site in <strong>Safari</strong>. Tap <strong>Share &rarr; Add to Home Screen</strong> so it opens like an app.',
+      'Tap <strong>2026 Live Tournament</strong>, then tap <strong>your name</strong> and confirm. (<strong>Practice</strong> is a sandbox for testing; nothing in it counts.)',
+      'That\'s it. Everyone sees scores and money update live. It keeps working with poor signal and syncs when you\'re back online.',
+    ]))}
+    ${card('The six tabs',
+      row('Cup', 'The projected score (what it would be if every match ended now), <strong>your match</strong> with a big Score button, the stableford tiebreaker and the other matches.') +
+      row('Rounds', 'One card per course. Set pairings and tees, open matches, add scorecard photos, start <strong>Wolf</strong> at Tobacco Road.') +
+      row('Side', 'Your own games on the side (below).') +
+      row('Money', 'Everyone\'s balance, the team-event pot, and how each dollar was won or lost.') +
+      row('Feed', 'Match updates and group chat.') +
+      row('Teams', 'Rosters, handicap indexes (tap Edit), switch player, Practice / Live.') +
+      `<div style="margin-top:6px">The blue bar under the title is always one tap to <strong>Live scoring</strong>.</div>`)}
+    ${card('Scoring a hole', li([
+      '<strong>Cup &rarr; Your match &rarr; Score hole N</strong> (or tap Live scoring). Use <strong>&minus; / +</strong> to set each player\'s <strong>gross</strong> score.',
+      'Tag the hole if it applies (below), then tap <strong>Post hole &amp; advance</strong>. One person per group can keep score, but anyone can.',
+      'If two people post <strong>different scores</strong> for the same player and hole, a popup shows both. Tap the correct one and confirm.',
+      'After the 18th hole, tap <strong>Submit final score</strong>. Submitted matches are <strong>locked</strong>. To change one, ask the organizer for the unlock code.',
+    ]))}
+    ${card('Tags on a hole',
+      `<p style="margin:0 0 6px"><strong>Par 3s:</strong> <strong>Greenie</strong> and <strong>CTP</strong> (closest to the pin). Pick the winner; every other player in your match pays them <strong>$5</strong>.</p>
+       <p style="margin:0 0 6px"><strong>Fines, $10 each, paid to the other side:</strong> ${fines}.</p>
+       <p style="margin:0"><strong>Hammer</strong> (Tobacco Road only): either side can throw it to double the hole; the other side takes it or folds.</p>`)}
+    ${card('The weekend',
+      row('Fri AM', 'Southern Pines &middot; low ball / high ball, 2v2 &middot; 6 pts') +
+      row('Fri PM', 'Mid Pines &middot; fourball, 2v2 &middot; 6 pts') +
+      row('Sat', 'Pine Needles &middot; singles &middot; 12 pts') +
+      row('Sun', 'Tobacco Road &middot; 2v2 fourball (hammer or Wolf optional) &middot; no cup points') +
+      ul([
+        '<strong>Every match is a Nassau:</strong> three bets (front 9, back 9, overall), each worth 1 point.',
+        '<strong>24 points, 12&frac12; wins the Cup.</strong> The winning team collects <strong>$200 a man</strong>.',
+        '<strong>Tiebreaker at 12&ndash;12:</strong> net stableford over the Saturday singles (each player on his own handicap). Still level? A playoff.',
+        '<strong>Handicaps:</strong> course handicap from your index and the tees played, capped at 32. 2v2 matches use 90%, with strokes off the low player. Singles use the full difference.',
+      ]))}
+    ${card('Side matches &amp; Wolf',
+      `<p style="margin:0 0 6px">Anyone can start extra games between any players on the <strong>Side</strong> tab: <strong>match play, stableford or stroke play</strong>, net, gross or custom strokes, any round and holes, any stake. Each is a Nassau with its own pot, and it scores itself from the scores you already enter. Tap <strong>Post the money</strong> when it's done.</p>
+       <p style="margin:0"><strong>Wolf</strong> (Tobacco Road): Rounds &rarr; Tobacco Road &rarr; <strong>Wolf</strong> for your foursome. The Wolf rotates, then picks a partner, goes lone or goes blind. You only enter the Wolf's call each hole.</p>`)}
+    ${card('Money at a glance',
+      row('Team event', '$200 a man, automatic') +
+      row('Greenie / CTP', '$5 from each other player in the match') +
+      row('Fines', '$10, paid to the other side') +
+      row('Side games', 'Whatever the game\'s stake is') +
+      `<div style="margin-top:6px">Everything nets into one balance per player on the <strong>Money</strong> tab. We settle up after Tobacco Road.</div>`)}
+    ${card('Good to know', ul([
+      '<strong>Wrong player?</strong> Teams &rarr; <strong>Not you? Switch player</strong>.',
+      '<strong>Scorecard photos:</strong> Rounds &rarr; <strong>Scorecards &amp; verify</strong> to snap the paper card and check scores.',
+      '<strong>Stuck or odd screen?</strong> Close the app fully and reopen it. Questions: ask the organizer.',
+    ]))}
   </div>`;
 }
 
@@ -1219,7 +1288,7 @@ function renderLiveBar(state) {
 }
 
 const SCREEN_RENDERERS = {
-  live: renderLive, side: renderSideList, sidedetail: renderSideDetail, sideedit: renderSideEdit, cup: renderCup, rounds: renderRounds, setup: renderSetup, card: renderCard,
+  help: renderHelp, live: renderLive, side: renderSideList, sidedetail: renderSideDetail, sideedit: renderSideEdit, cup: renderCup, rounds: renderRounds, setup: renderSetup, card: renderCard,
   money: renderMoney, feed: renderFeed, team: renderTeams, trophy: renderTrophy, verify: renderVerify,
 };
 

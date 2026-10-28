@@ -12,7 +12,7 @@ function uid(prefix) { return prefix + '_' + Math.random().toString(36).slice(2,
 function defaultUi() {
   return {
     screen: 'cup', moneyTab: 'games', setupSessionId: 's3', cardMatchId: null,
-    joinMode: 'live', moneyModal: null, sideId: null, sideDraft: null, scoreConflict: null, drafts: {}, me: null, tripCode: null, hcpEditPlayer: null,
+    joinMode: 'live', moneyModal: null, sideId: null, sideDraft: null, scoreConflict: null, helpFrom: null, drafts: {}, me: null, tripCode: null, hcpEditPlayer: null,
     verifySessionId: null, viewPhotoId: null, photoZoom: 1, cardFrom: 'rounds',
   };
 }
@@ -29,6 +29,12 @@ function applyHandicaps(state) {
     p.hcp = typeof v === 'number' ? v : BASE_HCP[p.id];
   });
   state.sessions.forEach(linkSession);
+  // the hammer is Tobacco Road only: an unlocked round elsewhere that still
+  // has it selected falls back to plain fourball
+  state.sessions.forEach((s) => {
+    const g = GAMES_BY_ID[s.format];
+    if (!s.locked && g && !gameAllowedAt(g, s.courseId)) s.format = gamesForCourse(s.courseId, g.shape)[0].id;
+  });
 }
 
 // A match needs to know its session (course + tee) to work out handicap
