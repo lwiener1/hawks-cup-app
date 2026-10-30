@@ -563,7 +563,11 @@ function renderSetup(state) {
   const slotSelect = (team, slot) => {
     const order = team === 'L' ? session.teamLOrder : session.teamTOrder;
     const roster = PLAYERS.filter((p) => p.team === team);
-    const opts = roster.map((p) => `<option value="${p.id}"${p.id === order[slot] ? ' selected' : ''}>${p.name} (CH ${Math.min(courseHandicapFor(p.id, session), MAX_HCP)})</option>`).join('');
+    const opts = roster.map((p) => {
+      // greyed out when putting them here would repeat a pair from the other round that day
+      const clash = p.id !== order[slot] && partnerClash(session, orderAfterSwap(order, slot, p.id));
+      return `<option value="${p.id}"${p.id === order[slot] ? ' selected' : ''}${clash ? ' disabled' : ''}>${p.name} (CH ${Math.min(courseHandicapFor(p.id, session), MAX_HCP)})${clash ? ' — pair repeats' : ''}</option>`;
+    }).join('');
     return `<select data-action="set-slot" data-session="${session.id}" data-team="${team}" data-slot="${slot}" class="field-input" style="padding:9px 8px;border-left:4px solid ${team === 'L' ? 'var(--accent)' : 'var(--team2)'}">${opts}</select>`;
   };
   const sideCol = (team, matchIdx) => Array.from({ length: perSide }, (_, k) => slotSelect(team, matchIdx * perSide + k)).join('');

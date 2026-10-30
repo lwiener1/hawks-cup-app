@@ -128,9 +128,43 @@ function toggleCounts(sessionId) {
   });
 }
 
+// Two-man teams can't repeat between the morning and afternoon rounds of the
+// same day. A "day" is the session's day label without its AM / PM.
+function dayOf(session) { return String(session.day || '').replace(/\s+(AM|PM)$/i, '').trim(); }
+function partnerKey(a, b) { return [a, b].sort().join('+'); }
+function partnerPairs(order) { return [partnerKey(order[0], order[1]), partnerKey(order[2], order[3])]; }
+
+// The other round that day already using one of the partnerships in `order`, or null.
+function partnerClash(session, order) {
+  if (session.shape !== 'team') return null;
+  const mine = partnerPairs(order);
+  for (const other of getState().sessions) {
+    if (other.id === session.id || other.shape !== 'team' || dayOf(other) !== dayOf(session)) continue;
+    for (const o of [other.teamLOrder, other.teamTOrder]) {
+      const hit = partnerPairs(o).find((k) => mine.includes(k));
+      if (hit) return { session: other, pair: hit.split('+').map((id) => PLAYERS_BY_ID[id].name) };
+    }
+  }
+  return null;
+}
+function partnerClashNote(c) {
+  return `${c.pair.join(' and ')} already play together in the ${c.session.day} round. A pair can't repeat in the morning and afternoon rounds, so change that round first or pick a different partner.`;
+}
+function orderAfterSwap(order, slot, playerId) {
+  const o = order.slice(), from = o.indexOf(playerId);
+  if (from === -1 || from === slot) return o;
+  o[from] = o[slot];
+  o[slot] = playerId;
+  return o;
+}
+
 // Put `playerId` in position `slot` for their team; whoever was there swaps
 // into the vacated position, so every player stays in exactly one slot.
 function setSlot(sessionId, team, slot, playerId) {
+  const session0 = findSession(sessionId);
+  const key0 = team === 'L' ? 'teamLOrder' : 'teamTOrder';
+  const clash = partnerClash(session0, orderAfterSwap(session0[key0], slot, playerId));
+  if (clash) { showNotice(partnerClashNote(clash)); render(); return; }
   update((state) => {
     const session = findSession(sessionId);
     const key = team === 'L' ? 'teamLOrder' : 'teamTOrder';
@@ -281,6 +315,11 @@ function lockInSession(sessionId) {
   if (findSession(sessionId).matches.some((m) => m.submitted)) {
     showNotice('A match in this round is submitted and locked, so the pairings can\'t be re-set. Unlock it first (match card, "Unlock to edit").');
     return;
+  }
+  {
+    const s0 = findSession(sessionId);
+    const clash = partnerClash(s0, s0.teamLOrder) || partnerClash(s0, s0.teamTOrder);
+    if (clash) { showNotice(partnerClashNote(clash)); return; }
   }
   update((state) => {
     const session = findSession(sessionId);
