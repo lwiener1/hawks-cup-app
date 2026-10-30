@@ -12,13 +12,13 @@ const TEAM_TWO_NICK = 'Princes';
 const TEAM_TWO_NAME = 'The Fore Princes';
 
 const PLAYERS = [
-  { id: 'david', name: 'David', team: 'L', hcp: 13, captain: true },
-  { id: 'lenny', name: 'Lenny', team: 'L', hcp: 21 },
-  { id: 'alex', name: 'Alex', team: 'L', hcp: 11 },
-  { id: 'dan', name: 'Dan', team: 'L', hcp: 20 },
-  { id: 'tom', name: 'Tom', team: 'T', hcp: 16, captain: true },
-  { id: 'ben', name: 'Ben', team: 'T', hcp: 10 },
-  { id: 'ryan', name: 'Ryan', team: 'T', hcp: 17 },
+  { id: 'david', name: 'David', team: 'L', hcp: 13.9, captain: true },
+  { id: 'lenny', name: 'Lenny', team: 'L', hcp: 20.7 },
+  { id: 'alex', name: 'Alex', team: 'L', hcp: 10.4 },
+  { id: 'dan', name: 'Dan', team: 'L', hcp: 16.4 },
+  { id: 'tom', name: 'Tom', team: 'T', hcp: 16.2, captain: true },
+  { id: 'ben', name: 'Ben', team: 'T', hcp: 10.3 },
+  { id: 'ryan', name: 'Ryan', team: 'T', hcp: 16.7 },
   { id: 'jamey', name: 'Jamey', team: 'T', hcp: 28 },
 ];
 
@@ -139,7 +139,7 @@ function gameAllowedAt(game, courseId) { return !game.onlyAt || game.onlyAt === 
 function gamesForCourse(courseId, shape) { return GAMES.filter((g) => g.shape === shape && gameAllowedAt(g, courseId)); }
 function gameFor(session) { return GAMES_BY_ID[session.format] || GAMES[0]; }
 
-const TAG_TYPES = ['Greenie', 'CTP', 'Gallery rule', 'In the water', 'Whiff', 'Sandbagging confession', 'Lost a club', 'Four-putt', 'Sand to sand', 'Topped tee shot'];
+const TAG_TYPES = ['Gallery rule', 'In the water', 'Whiff', 'Sandbagging confession', 'Lost a club', 'Four-putt', 'Sand to sand', 'Topped tee shot'];
 
 // Big shots. A hole in one (a 1 on any hole) or an albatross (3 under par, so a
 // 2 on a par 5) gets a celebration on every phone, a feed post, and a bounty:
@@ -156,7 +156,12 @@ const FEAT_NAMES = { ace: 'Hole in one', albatross: 'Albatross' };
 // (It sits in the page source, so it keeps honest people honest, nothing more.)
 const UNLOCK_CODE = 'HAWKS';
 
-// Tags that can be used on this hole (greenies and CTPs are par 3 only).
+// Closest to the pin (par 3s): the winner collects this from EACH other player
+// in his foursome. It isn't a hole tag: it is set per foursome on the card, so
+// two matches playing together can't both pay it out.
+const CTP_AMOUNT = 5;
+
+// Tags that can be used on this hole.
 function tagsForHole(hole) {
   return TAG_TYPES.filter((t) => !TAG_RULES[t].par3 || hole.par === 3);
 }
@@ -165,11 +170,8 @@ function tagsForHole(hole) {
 // on the green isn't something scores can tell us); 'fine' charges whoever
 // you name. Every fine is a hole tag: nothing is charged outside a hole.
 const TAG_RULES = {
-  // 'pick' amounts are paid by EACH other player in the match to the winner.
-  'Greenie':      { mode: 'pick', amount: 5, par3: true, ask: 'Who got the greenie?' },
-  'CTP':          { mode: 'pick', amount: 5, par3: true, ask: 'Who was closest to the pin?' },
-  // 'fine' amounts are what the offender pays in total; it is shared equally
-  // by the other side (1 or 2 players, so $10 always splits to whole dollars).
+  // 'fine' amounts are what the offender pays; every fine goes into the one
+  // big fine pot (nobody collects it hole by hole).
   'Gallery rule':           { mode: 'fine', amount: 10, ask: 'Who broke the gallery rule?' },
   'In the water':           { mode: 'fine', amount: 10, ask: 'Who went in the water?' },
   'Whiff':                  { mode: 'fine', amount: 10, ask: 'Who whiffed?' },

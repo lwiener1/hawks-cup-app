@@ -12,6 +12,50 @@ function teamNickname(fullName) {
   return words[words.length - 1];
 }
 
+// Who is playing together. In a team round each 2v2 match is a foursome. In a
+// singles round the foursomes are set on the setup screen; until then matches
+// 1 and 2 play together and matches 3 and 4 play together.
+function sessionGroups(session) {
+  if (session.shape !== 'singles') return session.matches.map((m) => m.sideA.concat(m.sideB));
+  const g = session.groups;
+  const L = session.teamLOrder, T = session.teamTOrder;
+  // a foursome is two whole matches: both players of each match are in the same group
+  const valid = Array.isArray(g) && g.length === 2 && g.every((x) => Array.isArray(x) && x.length === 4) && new Set(g[0].concat(g[1])).size === 8 &&
+    L.every((id, i) => g.some((x) => x.includes(id) && x.includes(T[i])));
+  if (valid) return g;
+  return [[L[0], T[0], L[1], T[1]], [L[2], T[2], L[3], T[3]]];
+}
+function foursomeIndex(session, playerId) { return sessionGroups(session).findIndex((g) => g.includes(playerId)); }
+function foursomeFor(session, playerId) {
+  const groups = sessionGroups(session), i = foursomeIndex(session, playerId);
+  return i >= 0 ? groups[i] : [playerId];
+}
+
+// Closest to the pin: the winner of each par 3, per foursome, collects CTP_AMOUNT
+// from every other player in that foursome. Entries get fixed ids, so redoing
+// this after any change only touches what actually changed.
+function rebuildCtp(state, session) {
+  state.ledger = state.ledger.filter((e) => !(e.kind === 'ctp' && e.sessionId === session.id));
+  state.sideGameEvents = state.sideGameEvents.filter((e) => !(e.kind === 'ctp' && e.sessionId === session.id));
+  const groups = sessionGroups(session);
+  const ctp = session.ctp || {};
+  Object.keys(ctp).forEach((holeN) => {
+    Object.keys(ctp[holeN]).forEach((gi) => {
+      const rec = ctp[holeN][gi], group = groups[gi];
+      if (!group || !group.includes(rec.p)) { delete ctp[holeN][gi]; return; }
+      const payers = group.filter((id) => id !== rec.p);
+      const detail = `CTP ${ordinal(Number(holeN))}`;
+      const base = `ctp_${session.id}_${holeN}_${gi}`;
+      state.sideGameEvents.push({ id: base, kind: 'ctp', sessionId: session.id, holeN: Number(holeN), type: 'CTP', playerId: rec.p, amount: CTP_AMOUNT * payers.length, detail, ts: rec.ts });
+      state.ledger.push({ id: base + '_' + rec.p, kind: 'ctp', sessionId: session.id, holeN: Number(holeN), playerId: rec.p, amount: CTP_AMOUNT * payers.length, detail, ts: rec.ts });
+      payers.forEach((id) => {
+        state.ledger.push({ id: base + '_' + id, kind: 'ctp', sessionId: session.id, holeN: Number(holeN), playerId: id, amount: -CTP_AMOUNT, detail: `${detail} (${PLAYERS_BY_ID[rec.p].name} won)`, ts: rec.ts });
+      });
+    });
+    if (!Object.keys(ctp[holeN]).length) delete ctp[holeN];
+  });
+}
+
 function sideShortLabel(state, session, side) {
   if (session.shape === 'singles') return PLAYERS_BY_ID[side[0]].name;
   const team = PLAYERS_BY_ID[side[0]].team;

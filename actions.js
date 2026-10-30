@@ -53,6 +53,7 @@ function goBack() {
   update((state) => {
     const s = state.ui.screen;
     if (s === 'help') { state.ui.screen = state.ui.helpFrom && state.ui.helpFrom !== 'help' ? state.ui.helpFrom : 'cup'; return; }
+    if (s === 'foursome') { state.ui.screen = state.ui.cardFrom === 'live' ? 'live' : 'rounds'; return; }
     if (s === 'sidedetail') { state.ui.screen = 'side'; return; }
     if (s === 'sideedit') { state.ui.screen = state.ui.sideDraft && state.ui.sideDraft.id ? 'sidedetail' : 'side'; return; }
     if (s === 'card' && state.ui.cardFrom === 'live') state.ui.screen = 'live';
@@ -67,6 +68,9 @@ function openSetup(sessionId) {
 }
 
 function openCard(matchId) {
+  // a Saturday singles match opens its foursome's card: one screen, four scores
+  const sess = sessionForMatch(matchId), mm = matchById(matchId);
+  if (sess && mm && sess.shape === 'singles' && foursomeMatches(sess, foursomeIndex(sess, mm.sideA[0])).length === 2) { openFoursome(matchId); return; }
   update((state) => {
     state.ui.cardFrom = state.ui.screen === 'live' ? 'live' : 'rounds';   // Back returns to where you came from
     state.ui.cardMatchId = matchId;
@@ -139,6 +143,140 @@ function setSlot(sessionId, team, slot, playerId) {
   });
 }
 
+// Closest to the pin on a par 3: tap the winner (tap again to clear). It pays
+// out of the whole foursome and is saved immediately, not with Post hole.
+function setCtp(matchId, holeN, playerId) {
+  if (matchIsLocked(matchId)) return;
+  update((state) => {
+    const session = sessionForMatch(matchId);
+    if (!session) return;
+    const gi = foursomeIndex(session, playerId);
+    if (gi < 0) return;
+    session.ctp = session.ctp || {};
+    const h = session.ctp[holeN] = session.ctp[holeN] || {};
+    if (h[gi] && h[gi].p === playerId) delete h[gi]; else h[gi] = { p: playerId, ts: Date.now() };
+    if (!Object.keys(h).length) delete session.ctp[holeN];
+    rebuildCtp(state, session);
+  });
+}
+
+// ---- the foursome card (Saturday singles) -----------------------------------------
+// One screen for the whole foursome: all four players' scores for the hole, the
+// closest-to-pin winner and the fines. It writes to the two singles matches the
+// foursome is made of, so everything downstream (results, money, conflicts,
+// submit and lock) is exactly what the single match card does.
+
+function foursomeMatches(session, gi) {
+  const g = sessionGroups(session)[gi];
+  if (!g) return [];
+  return session.matches.filter((m) => m.sideA.concat(m.sideB).every((id) => g.includes(id)));
+}
+
+function openFoursome(matchId) {
+  update((state) => {
+    const session = sessionForMatch(matchId), m = matchById(matchId);
+    const gi = foursomeIndex(session, m.sideA[0]);
+    const ms = foursomeMatches(session, gi), course = courseFor(session);
+    state.ui.cardFrom = state.ui.screen === 'live' ? 'live' : 'rounds';
+    state.ui.foursome = { sessionId: session.id, gi };
+    const idx = cardView(state, ms[0], course).holeIdx;       // both matches score the same hole together
+    ms.forEach((x) => { if (cardView(state, x, course).holeIdx !== idx) setViewedHole(state, x.id, idx); });
+    state.ui.screen = 'foursome';
+  });
+}
+
+function foursomeGoto(idx) {
+  update((state) => {
+    const f = state.ui.foursome, session = f && findSession(f.sessionId);
+    if (!session) return;
+    const course = courseFor(session);
+    const i = Math.max(0, Math.min(course.holes.length - 1, idx));
+    foursomeMatches(session, f.gi).forEach((m) => setViewedHole(state, m.id, i));
+  });
+}
+function foursomeStep(delta) {
+  const f = getState().ui.foursome, session = f && findSession(f.sessionId);
+  if (!session) return;
+  const ms = foursomeMatches(session, f.gi);
+  foursomeGoto(cardView(getState(), ms[0], courseFor(session)).holeIdx + delta);
+}
+
+// Post the hole for both matches. If the first one runs into a score conflict
+// the popup comes up and the second is posted after it is resolved.
+function postNext(ids) {
+  const queue = ids.slice();
+  while (queue.length) {
+    const id = queue.shift();
+    postHoleAndAdvance(id, undefined, queue.slice());
+    const c = getState().ui.scoreConflict;
+    if (c && c.matchId === id) return;
+  }
+}
+function postFoursomeHole() {
+  const f = getState().ui.foursome, session = f && findSession(f.sessionId);
+  if (session) postNext(foursomeMatches(session, f.gi).map((m) => m.id));
+}
+function submitFoursome() {
+  const f = getState().ui.foursome, session = f && findSession(f.sessionId);
+  if (!session) return;
+  foursomeMatches(session, f.gi).forEach((m) => { if (!m.submitted && matchComplete(m, courseFor(session))) submitMatch(m.id); });
+}
+
+// Fines on the foursome card: pick the fine, then tap who. The fine is stored
+// on the singles match that player is in.
+function fsSelectTag(tag) {
+  update((state) => { state.ui.fineTag = state.ui.fineTag === tag ? null : tag; });
+}
+function fsToggleFine(playerId, tagOverride) {
+  const f = getState().ui.foursome, session = f && findSession(f.sessionId);
+  if (!session) return;
+  const tag = tagOverride || getState().ui.fineTag;
+  if (!tag) { showNotice('Pick the fine first, then tap who it\'s for.'); return; }
+  const m = foursomeMatches(session, f.gi).find((x) => x.sideA.concat(x.sideB).includes(playerId));
+  if (!m || matchIsLocked(m.id)) return;
+  update((state) => {
+    writeDraft(state, m, courseFor(session), (d) => {
+      const cur = d.who[tag] || [];
+      if (cur.includes(playerId)) {
+        d.who[tag] = cur.filter((x) => x !== playerId);
+        if (!d.who[tag].length) { delete d.who[tag]; d.tags = d.tags.filter((t) => t !== tag); }
+      } else {
+        if (!d.tags.includes(tag)) d.tags.push(tag);
+        d.who[tag] = cur.concat(playerId);
+      }
+    });
+  });
+}
+
+// Singles rounds: tap one player, then a player in the other foursome, to swap them.
+function pickForGroup(sessionId, playerId) {
+  const session = findSession(sessionId);
+  if (!session || session.shape !== 'singles') return;
+  const pick = getState().ui.groupPick;
+  if (!pick || pick.sessionId !== sessionId || pick.playerId === playerId) {
+    update((state) => { state.ui.groupPick = pick && pick.playerId === playerId && pick.sessionId === sessionId ? null : { sessionId, playerId }; });
+    return;
+  }
+  const groups = sessionGroups(session);
+  const gi = foursomeIndex(session, pick.playerId), gj = foursomeIndex(session, playerId);
+  if (gi === gj) { update((state) => { state.ui.groupPick = { sessionId, playerId }; }); return; }   // same foursome: just move the highlight
+  if (roundIsLocked(sessionId)) { update((state) => { state.ui.groupPick = null; }); return; }
+  // a foursome is two whole matches, so the swap moves a match (both of its players)
+  const pairs = pairingsFromOrders('singles', session.teamLOrder, session.teamTOrder).map((p) => p.sideA.concat(p.sideB));
+  const pairOf = (id) => pairs.find((p) => p.includes(id));
+  const mine = pairOf(pick.playerId), theirs = pairOf(playerId);
+  update((state) => {
+    const s = findSession(sessionId);
+    const keepI = groups[gi].filter((id) => !mine.includes(id)), keepJ = groups[gj].filter((id) => !theirs.includes(id));
+    const next = [];
+    next[gi] = keepI.concat(theirs);
+    next[gj] = keepJ.concat(mine);
+    s.groups = next;
+    rebuildCtp(state, s);
+    state.ui.groupPick = null;
+  });
+}
+
 function lockInSession(sessionId) {
   if (findSession(sessionId).matches.some((m) => m.submitted)) {
     showNotice('A match in this round is submitted and locked, so the pairings can\'t be re-set. Unlock it first (match card, "Unlock to edit").');
@@ -149,6 +287,8 @@ function lockInSession(sessionId) {
     const pairings = pairingsFromOrders(session.shape, session.teamLOrder, session.teamTOrder);
     session.matches = pairings.map((p) => makeMatch(p.sideA, p.sideB, null, session.format));
     session.locked = true;
+    session.ctp = {};                // new matches, new scores: closest-to-pin wins start over
+    rebuildCtp(state, session);
     state.ui.screen = 'rounds';
   });
 }
@@ -247,7 +387,7 @@ function toggleTag(matchId, tag) {
   });
 }
 
-// Name the player a Greenie / CTP pays, or the player(s) a penalty tag fines.
+// Name the player a CTP pays, or the player(s) a penalty tag fines.
 function toggleTagWho(matchId, tag, playerId) {
   const rule = TAG_RULES[tag];
   if (!rule || matchIsLocked(matchId)) return;
@@ -332,10 +472,12 @@ function confirmConflict() {
   const c = getState().ui.scoreConflict;
   if (!c) return;
   if (!c.items.every((it) => c.choice[it.playerId])) { showNotice('Pick the correct score for each player first.'); return; }
+  const rest = (c.queue || []).slice();
   postHoleAndAdvance(c.matchId, Object.assign({}, c.choice));
+  if (rest.length && !getState().ui.scoreConflict) postNext(rest);   // the other match in the foursome
 }
 
-function postHoleAndAdvance(matchId, resolved) {
+function postHoleAndAdvance(matchId, resolved, queue) {
   if (matchIsLocked(matchId)) return;
   update((state) => {
     const match = matchById(matchId);
@@ -364,7 +506,7 @@ function postHoleAndAdvance(matchId, resolved) {
     if (conflicts.length && !(resolved && conflicts.every((c) => resolved[c.playerId]))) {
       state.ui.scoreConflict = {
         matchId, holeN: hole.n, by: posted.name || 'Someone', byId: posted.by || null, ts: posted.ts,
-        items: conflicts, choice: Object.assign({}, resolved || {}),
+        items: conflicts, choice: Object.assign({}, resolved || {}), queue: queue || [],
       };
       return;
     }
@@ -416,14 +558,10 @@ function postHoleAndAdvance(matchId, resolved) {
           });
         });
       } else {
-        // The offender pays the fine; the other side shares it equally.
+        // The offender pays the fine into the one big fine pot (no one else
+        // collects it; the pot total shows on the Money screen).
         (whoNow[tag] || []).forEach((pid) => {
-          const others = match.sideA.includes(pid) ? match.sideB : match.sideA;
-          const share = rule.amount / others.length;
           state.ledger.push({ id: uid('ldg'), kind: 'fine', matchId, holeN: hole.n, playerId: pid, amount: -rule.amount, detail: `${tag} ${ordinal(hole.n)}`, ts });
-          others.forEach((id) => {
-            state.ledger.push({ id: uid('ldg'), kind: 'fine-won', matchId, holeN: hole.n, playerId: id, amount: share, detail: `${tag} ${ordinal(hole.n)} (${PLAYERS_BY_ID[pid].name} fined)`, ts });
-          });
         });
       }
     });
@@ -546,7 +684,7 @@ function payoutMatch(matchId, winnerSide, perPerson) {
   });
 }
 
-// Remove a fine / manual entry (or a whole match payout). Greenies and
+// Remove a fine / manual entry (or a whole match payout). Closest-to-pin wins and
 // closest-to-pin belong to the hole they were tagged on and are undone there.
 function removeLedgerEntry(entryId) {
   update((state) => {

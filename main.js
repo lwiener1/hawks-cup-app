@@ -28,6 +28,16 @@ document.addEventListener('click', (ev) => {
     case 'go-to-hole': goToHole(a.match, Number(a.idx)); break;
     case 'step-hole': stepHole(a.match, Number(a.delta)); break;
     case 'post-hole': postHoleAndAdvance(a.match); break;
+    case 'fs-step': foursomeStep(Number(a.delta)); break;
+    case 'fs-goto': foursomeGoto(Number(a.idx)); break;
+    case 'fs-post': postFoursomeHole(); break;
+    case 'fs-submit':
+      if (confirm('Submit the final scores for both matches in this foursome? Once submitted they are locked, and changing them needs the unlock code.')) submitFoursome();
+      break;
+    case 'fs-tag': fsSelectTag(a.tag); break;
+    case 'fs-fine': fsToggleFine(a.player, a.tag); break;
+    case 'ctp-set': setCtp(a.match, Number(a.hole), a.player); break;
+    case 'group-pick': pickForGroup(a.session, a.player); break;
     case 'conflict-choose': chooseConflict(a.player, a.which); break;
     case 'conflict-confirm': confirmConflict(); break;
     case 'conflict-cancel': cancelConflict(); break;

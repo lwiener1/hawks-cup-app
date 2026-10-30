@@ -12,7 +12,7 @@ function uid(prefix) { return prefix + '_' + Math.random().toString(36).slice(2,
 function defaultUi() {
   return {
     screen: 'cup', moneyTab: 'games', setupSessionId: 's3', cardMatchId: null,
-    joinMode: 'live', moneyModal: null, sideId: null, sideDraft: null, scoreConflict: null, helpFrom: null, drafts: {}, me: null, tripCode: null, hcpEditPlayer: null,
+    joinMode: 'live', moneyModal: null, sideId: null, sideDraft: null, scoreConflict: null, helpFrom: null, groupPick: null, foursome: null, fineTag: null, drafts: {}, me: null, tripCode: null, hcpEditPlayer: null,
     verifySessionId: null, viewPhotoId: null, photoZoom: 1, cardFrom: 'rounds',
   };
 }
@@ -134,18 +134,18 @@ function seedState(ui) {
 
   const now = Date.now();
   const ledgerRows = [
-    ['david', 20, 'CTP 6th', 3500e3],
-    ['lenny', 10, 'Greenie 12th', 3000e3], ['lenny', -30, 'Two fines', 2900e3],
-    ['alex', 40, 'CTP 3rd', 2000e3], ['dan', -10, 'Whiff 4th', 1800e3],
-    ['tom', 40, 'CTP 12th', 1500e3], ['ben', 10, 'Greenie 7th', 1200e3], ['ben', -40, 'Gallery rule x2', 1100e3],
-    ['jamey', -70, 'Four fines', 600e3], ['jamey', -40, 'Pot contribution', 500e3],
+    ['david', 15, 'CTP 6th', 3500e3],
+    ['lenny', -10, 'Whiff 5th', 3000e3, 'fine'], ['lenny', -20, 'Four-putt 9th', 2900e3, 'fine'],
+    ['alex', 15, 'CTP 3rd', 2000e3], ['dan', -10, 'Whiff 4th', 1800e3, 'fine'],
+    ['tom', -15, 'CTP 12th (Alex won)', 1500e3], ['ben', -20, 'Gallery rule x2', 1100e3, 'fine'],
+    ['jamey', -30, 'Three fines', 600e3, 'fine'], ['jamey', -15, 'CTP 3rd (Alex won)', 500e3],
   ];
-  state.ledger = ledgerRows.map((r, i) => ({ id: 'seed' + i, playerId: r[0], amount: r[1], detail: r[2], ts: now - r[3] }));
+  state.ledger = ledgerRows.map((r, i) => Object.assign({ id: 'seed' + i, playerId: r[0], amount: r[1], detail: r[2], ts: now - r[3] }, r[4] ? { kind: r[4] } : {}));
 
   const feedRows = [
     ['Hawks Cup', true, 'David & Dan go 2 UP — Dan nets a 4 on the 8th with a shot.', 60e3],
     ['Tom', false, 'Closest to the pin on 13 is $15. Somebody hit it.', 240e3],
-    ['Lenny', false, 'Greenie on 12 and a two-putt. Paid for lunch.', 660e3],
+    ['Lenny', false, 'Closest to the pin on 12 and a two-putt. Paid for lunch.', 660e3],
     ['Hawks Cup', true, 'Princes take the 10th — match 2 back to 1 UP.', 1560e3],
     ['Jamey', false, 'Fined again for the gallery rule. Ledger is a crime scene.', 2880e3],
     ['David', false, 'Tobacco Road order of play at dinner. Bring your own excuses.', 3600e3],

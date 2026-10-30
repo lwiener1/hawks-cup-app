@@ -29,6 +29,10 @@ function headerInfo(state) {
     return { kicker: `${course.name} · ${game.name}`, title: 'Match card', right: `Scoring: ${myName(state)}` };
   }
   if (screen === 'help') return { kicker: 'The Hawks Cup', title: 'Help & player guide', right: '' };
+  if (screen === 'foursome') {
+    const fs = state.ui.foursome, sess = fs && findSession(fs.sessionId);
+    return { kicker: sess ? `${courseFor(sess).name} · Singles` : 'Singles', title: 'Foursome', right: `Scoring: ${myName(state)}` };
+  }
   if (screen === 'sidedetail') {
     const sm = sideById(state, state.ui.sideId);
     return { kicker: 'Side match', title: sm ? sm.name : 'Side match', right: sm ? sideFormatName(sm.format) : '' };
@@ -62,7 +66,7 @@ function moneyMovedLabel(state) {
 
 function renderHeader(state) {
   const info = headerInfo(state);
-  const showBack = ['card', 'setup', 'trophy', 'verify', 'sidedetail', 'sideedit', 'help'].includes(state.ui.screen);
+  const showBack = ['card', 'foursome', 'setup', 'trophy', 'verify', 'sidedetail', 'sideedit', 'help'].includes(state.ui.screen);
   const helpBtn = state.ui.screen === 'help' ? '' : `<button data-action="open-help" aria-label="Help and player guide" style="flex:none;width:34px;height:34px;border:2px solid var(--accent);border-radius:50%;background:transparent;color:var(--accent);font-weight:800;font-size:17px;line-height:1;padding:0">?</button>`;
   const practiceBar = isPractice(state)
     ? `<div style="flex:none;background:var(--accent);color:#fff;text-align:center;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;padding:calc(env(safe-area-inset-top,0px) + 5px) 10px 5px">Practice mode &middot; nothing here counts</div>` : '';
@@ -577,6 +581,29 @@ function renderSetup(state) {
     </div>`).join('');
   const hasScores = session.matches.some((m) => Object.keys(m.grossScores).some((id) => Object.keys(m.grossScores[id]).length));
 
+  // Singles: who is in each foursome (the four people who actually walk the
+  // course together). Closest to the pin pays out within the foursome.
+  let groupBlock = '';
+  if (session.shape === 'singles') {
+    const groups = sessionGroups(session);
+    const pick = state.ui.groupPick && state.ui.groupPick.sessionId === session.id ? state.ui.groupPick.playerId : null;
+    const pairs = pairingsFromOrders('singles', session.teamLOrder, session.teamTOrder);
+    const box = (g, i) => `
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:800;margin-bottom:6px">Foursome ${i + 1}</div>
+        <div style="display:flex;flex-direction:column;gap:1px;background:var(--rule);border:1px solid var(--rule)">${pairs.filter((p) => g.includes(p.sideA[0])).map((p) => {
+          const a = PLAYERS_BY_ID[p.sideA[0]], b = PLAYERS_BY_ID[p.sideB[0]], on = pick === a.id || pick === b.id;
+          return `<button data-action="group-pick" data-session="${session.id}" data-player="${a.id}" style="border:0;background:${on ? 'var(--accent)' : 'var(--bg)'};color:${on ? '#fff' : 'var(--ink)'};font-weight:800;font-size:14px;padding:12px 10px;text-align:left;line-height:1.4">${esc(a.name)}<br><span style="font-weight:600;opacity:.75;font-size:12px">vs</span> ${esc(b.name)}</button>`;
+        }).join('')}</div>
+      </div>`;
+    groupBlock = `
+    <div>
+      <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Foursomes &mdash; who plays together</div>
+      <div style="font-size:13px;line-height:1.45;color:rgba(10,16,48,.7);margin-bottom:8px">These are the two groups of four on the course. Each foursome is two matches, and closest to the pin pays out within it. To change it, tap a match, then tap a match in the other foursome to swap them. (To change who plays whom, use the match slots above.)</div>
+      <div style="display:flex;gap:10px">${groups.map(box).join('')}</div>
+    </div>`;
+  }
+
   return `
   <div style="padding:16px 18px 30px;display:flex;flex-direction:column;gap:16px">
     <div>
@@ -598,6 +625,7 @@ function renderSetup(state) {
       <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7);margin-bottom:8px">${esc(state.teamOneName)} on the left, ${esc(state.teamTwoName)} on the right. Tap a name to change it &mdash; picking someone already in another match swaps the two. (CH = course handicap on these tees.)</div>
       <div style="border:1px solid var(--rule)">${pairRows}</div>
     </div>
+    ${groupBlock}
     ${hasScores ? `<div style="border:1px solid var(--accent);padding:10px;font-size:12px;line-height:1.45"><strong style="color:var(--accent)">Scores already entered.</strong> Locking in again replaces this round's matches and clears its scores.</div>` : ''}
     <button data-action="lock-in" data-session="${session.id}" class="btn btn-primary btn-block">${session.locked ? 'Lock in again' : 'Lock in session'}</button>
   </div>`;
@@ -736,6 +764,30 @@ function renderCard(state) {
     </div>`;
   }).join('');
 
+  // Closest to the pin (par 3s): the winner collects from the whole foursome
+  // playing together. Saved the moment you tap, separately from Post hole.
+  let ctpBlock = '';
+  if (hole.par === 3) {
+    // normally both players of a singles match are in the same foursome; if the
+    // foursomes were set up so they aren't, offer both
+    const shown = [];
+    match.sideA.concat(match.sideB).forEach((pid) => { foursomeFor(session, pid).forEach((id) => { if (!shown.includes(id)) shown.push(id); }); });
+    const winnerOf = (id) => { const w = ((session.ctp || {})[hole.n] || {})[foursomeIndex(session, id)]; return w && w.p === id ? w : null; };
+    const winners = shown.filter((id) => winnerOf(id));
+    const four = foursomeFor(session, match.sideA[0]);
+    const cur = winners.length ? { p: winners[0] } : null;
+    const chips = shown.map((id) => {
+      const on = !!winnerOf(id);
+      return `<button data-action="ctp-set" data-match="${match.id}" data-hole="${hole.n}" data-player="${id}" style="flex:1 0 auto;border:0;background:${on ? 'var(--accent)' : 'var(--bg)'};color:${on ? '#fff' : 'var(--ink)'};font-weight:800;font-size:14px;padding:12px 10px">${esc(PLAYERS_BY_ID[id].name)}</button>`;
+    }).join('');
+    ctpBlock = `
+    <div style="margin:14px 18px 0;border:1px solid var(--rule);border-radius:12px;padding:12px 12px 10px">
+      <div style="font-size:15px;font-weight:800">Closest to the pin</div>
+      <div style="font-size:13px;color:var(--muted);margin:2px 0 8px">${cur ? `${winners.map((id) => esc(PLAYERS_BY_ID[id].name)).join(' and ')} ${winners.length > 1 ? 'win' : 'wins'} $${CTP_AMOUNT * (four.length - 1)}: $${CTP_AMOUNT} from each other player in the foursome.` : `Tap the winner. Every other player in the foursome pays them $${CTP_AMOUNT}.`}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:1px;background:var(--rule);border:1px solid var(--rule)">${chips}</div>
+    </div>`;
+  }
+
   // Finished matches must be submitted; a submitted match is locked.
   const sub = match.submitted;
   const complete = matchComplete(match, course);
@@ -782,12 +834,129 @@ function renderCard(state) {
       <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)">This hole</div>
       <div style="font-size:15px;font-weight:800;color:${holeResultColor}">${esc(holeResultText)}</div>
     </div>
-    <div style="padding:12px 18px 8px;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)">Tag the hole &middot; side bets &amp; fines</div>
+    <div style="padding:12px 18px 8px;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)">Tag the hole &middot; fines</div>
     <div style="display:flex;flex-wrap:wrap;gap:1px;background:var(--rule);margin:0 18px;border:1px solid var(--rule)">${tagBtns}</div>
     ${tagWhoBlocks}
-    <div style="padding:8px 18px 0;font-size:11px;line-height:1.45;color:var(--muted)">Greenie and CTP (par 3s only): you pick the winner and each other player in the match pays them $${TAG_RULES.Greenie.amount}. Fines: whoever you pick pays $${TAG_RULES['Gallery rule'].amount}, shared by the other side. It all lands in Money when you post the hole.</div>
+    <div style="padding:8px 18px 0;font-size:13px;line-height:1.45;color:var(--muted)">Fines: whoever you pick pays $${TAG_RULES['Gallery rule'].amount} into the one big fine pot. They land in Money when you post the hole.</div>
+    ${ctpBlock}
     ${sub ? '<div style="height:26px"></div>' : `<button data-action="post-hole" data-match="${match.id}" class="btn btn-primary btn-block" style="margin:16px 18px ${complete ? '14px' : '26px'};width:calc(100% - 36px)">Post hole ${hole.n} &amp; advance</button>`}
     ${submitBlock}
+  </div>`;
+}
+
+// ---------- Foursome card (Saturday singles: one screen, four scores) ----------
+function renderFoursome(state) {
+  const f = state.ui.foursome;
+  const session = f && findSession(f.sessionId);
+  const ms = session ? foursomeMatches(session, f.gi) : [];
+  if (!session || ms.length < 2) return `<div style="padding:22px 20px;font-size:14px;color:var(--muted)">That foursome isn't set up.<br><br><button data-action="go-screen" data-screen="rounds" class="btn btn-secondary">Back to rounds</button></div>`;
+  const course = courseFor(session);
+  const group = sessionGroups(session)[f.gi];
+  const views = ms.map((m) => cardView(state, m, course));
+  const hole = views[0].hole, holeIdx = views[0].holeIdx;
+  const tee = teeFor(session);
+  const yds = tee.yards ? tee.yards[hole.n - 1] : null;
+  const nHoles = course.holes.length;
+
+  const nav = `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px">
+      <button data-action="fs-step" data-delta="-1" style="border:1px solid var(--rule);background:transparent;border-radius:50%;width:40px;height:40px;font-size:18px">&larr;</button>
+      <div style="text-align:center">
+        <div style="font-size:13px;font-weight:700;color:var(--muted)">Foursome ${f.gi + 1} &middot; hole ${hole.n} of ${nHoles}</div>
+        <div style="font-size:19px;font-weight:800;letter-spacing:-.01em">Par ${hole.par} &middot; ${yds ? yds + ' yds &middot; ' : ''}SI ${hole.si}</div>
+      </div>
+      <button data-action="fs-step" data-delta="1" style="border:1px solid var(--rule);background:transparent;border-radius:50%;width:40px;height:40px;font-size:18px">&rarr;</button>
+    </div>
+    <div style="display:flex;gap:2px;padding:0 20px 10px">${course.holes.map((h, i) => {
+      const posted = ms.every((m) => (m.grossScores[m.sideA[0]] || {})[h.n] != null);
+      return `<button data-action="fs-goto" data-idx="${i}" style="flex:1;border:0;padding:0;background:transparent"><div style="height:14px;border-radius:2px;background:${posted ? 'var(--accent)' : 'var(--rule-soft)'};outline:${i === holeIdx ? '2px solid var(--accent)' : 'none'};outline-offset:1px"></div></button>`;
+    }).join('')}</div>`;
+
+  // each singles match: two players, steppers, the hole result as entered
+  const matchBlocks = ms.map((m, mi) => {
+    const view = views[mi];
+    const ids = m.sideA.concat(m.sideB);
+    const strokes = handicapAllocation(ids, session);
+    const nets = {};
+    ids.forEach((id) => { nets[id] = netScore(view.gross[id], strokes[id], hole.si); });
+    const [a, b] = ids;
+    const label = matchStateLabel(view.results, nHoles, PLAYERS_BY_ID[a].name, PLAYERS_BY_ID[b].name, 1);
+    const delta = Math.sign(nets[b] - nets[a]);
+    const holeText = delta === 0 ? `Halved with a net ${nets[a]}` : `${PLAYERS_BY_ID[delta > 0 ? a : b].name} wins ${Math.min(nets[a], nets[b])} to ${Math.max(nets[a], nets[b])}`;
+    const rows = ids.map((id) => {
+      const p = PLAYERS_BY_ID[id];
+      const shots = shotsOnHole(strokes[id], hole.si);
+      return `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--rule-faint)">
+        <div style="width:9px;height:9px;flex:none;background:${p.team === 'L' ? 'var(--accent)' : 'var(--team2)'}"></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:16px;font-weight:800">${esc(p.name)} <span style="color:var(--accent);font-size:13px">${shots === 0 ? '' : shots === 1 ? '&bull;' : '&bull;&bull;'}</span></div>
+          <div style="font-size:12px;color:var(--muted)">plays off ${strokes[id]} &middot; net ${nets[id]}</div>
+        </div>
+        <div style="display:flex;border:1px solid var(--rule);border-radius:10px;overflow:hidden">
+          <button data-action="step-gross" data-match="${m.id}" data-player="${id}" data-delta="-1" style="width:44px;height:46px;border:0;border-right:1px solid var(--rule);background:transparent;font-size:20px;font-weight:800">&minus;</button>
+          <div style="width:46px;height:46px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800">${view.gross[id]}</div>
+          <button data-action="step-gross" data-match="${m.id}" data-player="${id}" data-delta="1" style="width:44px;height:46px;border:0;border-left:1px solid var(--rule);background:transparent;font-size:20px;font-weight:800">+</button>
+        </div>
+      </div>`;
+    }).join('');
+    return `
+    <div style="margin:0 20px 12px;border:1px solid var(--rule);border-radius:16px;padding:12px 14px 10px;background:#fff">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+        <div style="font-size:13px;font-weight:700;color:var(--muted)">Match ${mi + 1} &middot; ${esc(label.text)}${view.results.length ? ` &middot; thru ${view.results.length}` : ''}</div>
+        ${m.submitted ? `<div style="font-size:12px;font-weight:800;color:var(--muted)">&check; Submitted</div>` : ''}
+      </div>
+      ${m.submitted ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--ink);color:#fff;border-radius:10px;padding:8px 10px;margin-top:8px;font-size:13px"><span>Submitted &amp; locked by ${esc(m.submitted.name || 'someone')}</span><button data-action="unlock-match" data-match="${m.id}" style="border:1px solid #fff;background:transparent;color:#fff;font-weight:800;font-size:12px;padding:6px 8px;border-radius:8px">Unlock</button></div>` : ''}
+      ${rows}
+      <div style="font-size:14px;font-weight:800;color:var(--accent);margin-top:2px">${esc(holeText)}</div>
+    </div>`;
+  }).join('');
+
+  // closest to the pin (par 3s), paid out of the whole foursome
+  let ctp = '';
+  if (hole.par === 3) {
+    const winner = ((session.ctp || {})[hole.n] || {})[f.gi];
+    const chips = group.map((id) => {
+      const on = winner && winner.p === id;
+      return `<button data-action="ctp-set" data-match="${ms[0].id}" data-hole="${hole.n}" data-player="${id}" style="flex:1 0 auto;border:0;background:${on ? 'var(--accent)' : 'var(--bg)'};color:${on ? '#fff' : 'var(--ink)'};font-weight:800;font-size:15px;padding:13px 10px">${esc(PLAYERS_BY_ID[id].name)}</button>`;
+    }).join('');
+    ctp = `
+    <div style="margin:0 20px 12px;border:1px solid var(--rule);border-radius:16px;padding:12px 14px">
+      <div style="font-size:16px;font-weight:800">Closest to the pin</div>
+      <div style="font-size:13px;color:var(--muted);margin:2px 0 8px">${winner ? `${esc(PLAYERS_BY_ID[winner.p].name)} wins $${CTP_AMOUNT * (group.length - 1)}: $${CTP_AMOUNT} from each of the other three.` : `Tap the winner. The other three in the foursome each pay $${CTP_AMOUNT}.`}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:1px;background:var(--rule);border:1px solid var(--rule)">${chips}</div>
+    </div>`;
+  }
+
+  // fines: pick the fine, then who
+  const picked = state.ui.fineTag;
+  const fineChips = FINE_TYPES.map((t) => `<button data-action="fs-tag" data-tag="${esc(t)}" style="border:0;background:${picked === t ? 'var(--accent)' : 'var(--bg)'};color:${picked === t ? '#fff' : 'var(--ink)'};font-weight:800;font-size:13px;padding:10px 12px;flex:1 0 auto">${esc(t)}</button>`).join('');
+  const whoChips = group.map((id) => `<button data-action="fs-fine" data-player="${id}" style="flex:1 0 auto;border:0;background:var(--bg);color:var(--ink);font-weight:800;font-size:14px;padding:11px 10px;${picked ? '' : 'opacity:.45'}">${esc(PLAYERS_BY_ID[id].name)}</button>`).join('');
+  const current = [];
+  views.forEach((v) => { Object.keys(v.who).forEach((tag) => (v.who[tag] || []).forEach((id) => current.push({ tag, id }))); });
+  const fines = `
+    <div style="margin:0 20px 12px;border:1px solid var(--rule);border-radius:16px;padding:12px 14px">
+      <div style="font-size:16px;font-weight:800">Fines on this hole</div>
+      <div style="font-size:13px;color:var(--muted);margin:2px 0 8px">$${TAG_RULES['Gallery rule'].amount} each, into the fine pot. Pick the fine, then tap who it's for.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:1px;background:var(--rule);border:1px solid var(--rule)">${fineChips}</div>
+      <div style="font-size:12px;font-weight:700;color:var(--muted);margin:8px 0 4px">${picked ? `${esc(picked)}: who?` : 'Then tap who'}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:1px;background:var(--rule);border:1px solid var(--rule)">${whoChips}</div>
+      ${current.length ? `<div style="font-size:13px;margin-top:8px">${current.map((c) => `<button data-action="fs-fine" data-player="${c.id}" data-tag="${esc(c.tag)}" style="border:1px solid var(--rule);background:var(--row-alt);border-radius:999px;padding:5px 10px;margin:0 6px 6px 0;font-size:13px;font-weight:700">${esc(PLAYERS_BY_ID[c.id].name)} &middot; ${esc(c.tag)} &times;</button>`).join('')}</div>` : ''}
+    </div>`;
+
+  const allComplete = ms.every((m) => matchComplete(m, course));
+  const needSubmit = ms.some((m) => !m.submitted && matchComplete(m, course));
+  const allSubmitted = ms.every((m) => m.submitted);
+  return `
+  <div style="padding-bottom:20px">
+    ${nav}
+    ${matchBlocks}
+    ${ctp}
+    ${fines}
+    ${allSubmitted ? '' : `<button data-action="fs-post" class="btn btn-primary btn-block" style="margin:6px 20px 12px;width:calc(100% - 40px);padding:16px;font-size:18px">Post hole ${hole.n} &amp; advance</button>`}
+    ${needSubmit ? `<div style="margin:0 20px 6px;border:2px solid var(--accent);border-radius:14px;padding:12px 14px">
+      <div style="font-size:14px;line-height:1.45"><strong style="color:var(--accent)">${allComplete ? 'Both matches are finished.' : 'A match is finished.'}</strong> Check the scores, then submit. Submitted matches are locked.</div>
+      <button data-action="fs-submit" class="btn btn-primary btn-block" style="margin-top:10px">Submit final scores</button></div>` : ''}
   </div>`;
 }
 
@@ -800,7 +969,7 @@ function renderMoney(state) {
 
   let body;
   if (state.ui.moneyTab === 'games') {
-    const ctpEvents = state.sideGameEvents.filter((e) => TAG_RULES[e.type]).sort((a, b) => b.ts - a.ts);
+    const ctpEvents = state.sideGameEvents.filter((e) => e.type === 'CTP').sort((a, b) => b.ts - a.ts);
     const ctpRows = ctpEvents.length ? ctpEvents.map((e) => `
       <div style="display:flex;align-items:center;gap:12px;padding:10px 18px;border-top:1px solid var(--rule)">
         <div style="font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);width:64px">${e.type}</div>
@@ -815,9 +984,9 @@ function renderMoney(state) {
           <div style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Side games so far</div>
           <div style="font-size:11px;color:var(--muted)">$${pot} tagged</div>
         </div>
-        <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7);margin-top:6px">Tag a par 3 from the Score screen while you play and pick who won the greenie or closest-to-pin. Each other player in the match pays the winner $${TAG_RULES.Greenie.amount}.</div>
+        <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7);margin-top:6px">On a par 3, open the match card and tap who was closest to the pin. Every other player in that foursome pays the winner $${CTP_AMOUNT}.</div>
       </div>
-      <div style="padding:16px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Closest to pin &amp; greenies</div>
+      <div style="padding:16px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Closest to the pin</div>
       ${ctpRows}
       <div style="height:26px"></div>`;
   } else {
@@ -871,8 +1040,24 @@ function renderMoney(state) {
         ${teExtra}
       </div>`;
 
-    // Recent hand-entered money and match payouts (hole fines, greenies and CTPs
-    // belong to their hole and are undone there)
+    // The one big fine pot: every hole fine goes in, nobody collects it hole by hole
+    const fineEntries = state.ledger.filter((e) => e.kind === 'fine' && e.amount < 0);
+    const finePot = fineEntries.reduce((a, e) => a - e.amount, 0);
+    const paidIn = {};
+    fineEntries.forEach((e) => { paidIn[e.playerId] = (paidIn[e.playerId] || 0) - e.amount; });
+    const payers = Object.keys(paidIn).sort((a, b) => paidIn[b] - paidIn[a]);
+    const potCard = `
+      <div style="padding:14px 18px;border-bottom:2px solid var(--rule);background:var(--row-alt)">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+          <div style="font-size:16px;font-weight:800">Fine pot</div>
+          <div style="font-size:26px;font-weight:800;letter-spacing:-.02em;color:var(--accent)">$${finePot}</div>
+        </div>
+        <div style="font-size:13px;line-height:1.45;color:var(--muted);margin-top:2px">${fineEntries.length ? `${fineEntries.length} fine${fineEntries.length === 1 ? '' : 's'} so far. Every fine goes into this one pot.` : 'Every fine goes into this one pot. Nothing in it yet.'}</div>
+        ${payers.length ? `<div style="font-size:13px;margin-top:6px">${payers.map((id) => `${esc(PLAYERS_BY_ID[id].name)} $${paidIn[id]}`).join(' &middot; ')}</div>` : ''}
+      </div>`;
+
+    // Recent hand-entered money and match payouts (hole fines and closest-to-pin
+    // wins belong to their hole and are undone there)
     const recent = state.ledger.filter((e) => !e.matchId && (e.kind === 'manual' || e.kind === 'fine')).slice().sort((a, b) => b.ts - a.ts).slice(0, 12);
     const seenGroups = {};
     const recentRows = recent.filter((e) => { if (!e.group) return true; if (seenGroups[e.group]) return false; seenGroups[e.group] = true; return true; }).map((e) => {
@@ -890,15 +1075,16 @@ function renderMoney(state) {
     const btn = 'flex:1;border:1px solid var(--rule);background:transparent;font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:11px 6px;color:var(--ink)';
     body = `
       ${teCard}
-      <div style="padding:14px 18px;border-bottom:2px solid var(--rule);font-size:12px;line-height:1.45;color:rgba(10,16,48,.7)">Greenies, CTPs, hole fines, the team event and any hand-entered money net into one balance per man. Fines are tagged on the hole and paid to the other side.</div>
+      ${potCard}
+      <div style="padding:14px 18px;border-bottom:2px solid var(--rule);font-size:12px;line-height:1.45;color:rgba(10,16,48,.7)">Closest-to-pin wins, hole fines, the team event and any hand-entered money net into one balance per man. Fines are tagged on the hole and go into the fine pot above, which is why the balances add up to minus the pot.</div>
       <div style="display:flex;gap:8px;padding:12px 18px;border-bottom:2px solid var(--rule)">
         <button data-action="open-money-payout" style="${btn}">Pay out a match</button>
         <button data-action="open-money-entry" style="${btn}">Enter money</button>
       </div>
       ${rows}
       <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:2px solid var(--rule);background:var(--row-alt)">
-        <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase">Pot in play</div>
-        <div style="font-size:18px;font-weight:800">${fmtMoney(net)} net · $${moved} moved</div>
+        <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase">Balances</div>
+        <div style="font-size:16px;font-weight:800">${fmtMoney(net)} net${finePot ? ` (fine pot $${finePot})` : ''} · $${moved} moved</div>
       </div>
       <div style="padding:16px 18px 6px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)">Hand-entered money</div>
       ${recentRows || `<div style="padding:4px 18px 12px;font-size:13px;color:var(--muted)">Nothing yet — use the buttons above for Tobacco Road money or side bets.</div>`}
@@ -1168,12 +1354,13 @@ function renderHelp(state) {
     ${card('Scoring a hole', li([
       '<strong>Cup &rarr; Your match &rarr; Score hole N</strong> (or tap Live scoring). Use <strong>&minus; / +</strong> to set each player\'s <strong>gross</strong> score.',
       'Tag the hole if it applies (below), then tap <strong>Post hole &amp; advance</strong>. One person per group can keep score, but anyone can.',
+      '<strong>Saturday singles:</strong> tapping your match opens the whole <strong>foursome</strong> on one screen, with all four scores, closest to the pin and fines. One person can score for everybody.',
       'If two people post <strong>different scores</strong> for the same player and hole, a popup shows both. Tap the correct one and confirm.',
       'After the 18th hole, tap <strong>Submit final score</strong>. Submitted matches are <strong>locked</strong>. To change one, ask the organizer for the unlock code.',
     ]))}
     ${card('Tags on a hole',
-      `<p style="margin:0 0 6px"><strong>Par 3s:</strong> <strong>Greenie</strong> and <strong>CTP</strong> (closest to the pin). Pick the winner; every other player in your match pays them <strong>$5</strong>.</p>
-       <p style="margin:0 0 6px"><strong>Fines, $10 each, paid to the other side:</strong> ${fines}.</p>
+      `<p style="margin:0 0 6px"><strong>Par 3s:</strong> <strong>Closest to the pin</strong>. Tap the winner on the match card; every other player in your <strong>foursome</strong> pays them <strong>$5</strong>. (On Saturday, the foursome is set when the singles are created.)</p>
+       <p style="margin:0 0 6px"><strong>Fines, $10 each, into one big fine pot:</strong> ${fines}.</p>
        <p style="margin:0"><strong>Hammer</strong> (Tobacco Road only): either side can throw it to double the hole; the other side takes it or folds.</p>`)}
     ${card('The weekend',
       row('Fri AM', 'Southern Pines &middot; low ball / high ball, 2v2 &middot; 6 pts') +
@@ -1191,8 +1378,8 @@ function renderHelp(state) {
        <p style="margin:0"><strong>Wolf</strong> (Tobacco Road): Rounds &rarr; Tobacco Road &rarr; <strong>Wolf</strong> for your foursome. The Wolf rotates, then picks a partner, goes lone or goes blind. You only enter the Wolf's call each hole.</p>`)}
     ${card('Money at a glance',
       row('Team event', '$200 a man, automatic') +
-      row('Greenie / CTP', '$5 from each other player in the match') +
-      row('Fines', '$10, paid to the other side') +
+      row('Closest to pin', '$5 from each other player in the foursome') +
+      row('Fines', '$10 each, into the one big fine pot') +
       row('Side games', 'Whatever the game\'s stake is') +
       `<div style="margin-top:6px">Everything nets into one balance per player on the <strong>Money</strong> tab. We settle up after Tobacco Road.</div>`)}
     ${card('Good to know', ul([
@@ -1288,7 +1475,7 @@ function renderLiveBar(state) {
 }
 
 const SCREEN_RENDERERS = {
-  help: renderHelp, live: renderLive, side: renderSideList, sidedetail: renderSideDetail, sideedit: renderSideEdit, cup: renderCup, rounds: renderRounds, setup: renderSetup, card: renderCard,
+  foursome: renderFoursome, help: renderHelp, live: renderLive, side: renderSideList, sidedetail: renderSideDetail, sideedit: renderSideEdit, cup: renderCup, rounds: renderRounds, setup: renderSetup, card: renderCard,
   money: renderMoney, feed: renderFeed, team: renderTeams, trophy: renderTrophy, verify: renderVerify,
 };
 
@@ -1361,6 +1548,7 @@ function render() {
   if (ui.screen === 'verify' && !findSession(ui.verifySessionId)) ui.screen = 'rounds';
   if (ui.viewPhotoId && !state.photos.some((p) => p.id === ui.viewPhotoId)) ui.viewPhotoId = null;
   if (ui.scoreConflict && !matchById(ui.scoreConflict.matchId)) ui.scoreConflict = null;
+  if (ui.screen === 'foursome' && !(ui.foursome && findSession(ui.foursome.sessionId))) ui.screen = 'rounds';
 
   // Re-rendering replaces the DOM, so carry over scroll position and any
   // half-typed text — otherwise a teammate's score arriving mid-keystroke
