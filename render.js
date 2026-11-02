@@ -530,13 +530,35 @@ function renderSetup(state) {
   const curTee = teeFor(session);
   const teeOpts = course.tees.map((t) => {
     const yds = t.total ? ` · ${t.total.toLocaleString()} yds` : '';
-    return `<option value="${t.id}"${t.id === curTee.id ? ' selected' : ''}>${esc(t.name)} · ${t.rating}/${t.slope}${yds}</option>`;
+    const shown = t.id === curTee.id ? curTee : t;
+    return `<option value="${t.id}"${t.id === curTee.id ? ' selected' : ''}>${esc(t.name)} · ${shown.rating}/${shown.slope}${shown.overridden ? ' (edited)' : ''}${yds}</option>`;
   }).join('');
+  const baseTee = baseTeeFor(session), basePar = baseTee.par || course.par, curPar = curTee.par || course.par;
+  const editing = state.ui.teeEdit === session.id;
+  const teeField = (id, label, value, step) => `
+    <label style="flex:1;min-width:0;font-size:11px;font-weight:800;color:var(--muted)">${label}
+      <input id="${id}" type="number" inputmode="decimal" step="${step}" value="${value}" class="field-input" style="padding:10px 8px;font-weight:800;font-size:16px;margin-top:3px;width:100%;box-sizing:border-box">
+    </label>`;
+  const teeEditor = editing ? `
+      <div style="border:2px solid var(--accent);border-radius:12px;padding:12px;margin-top:8px">
+        <div style="font-size:13px;line-height:1.45;margin-bottom:8px">Type the numbers printed on the scorecard for the <strong>${esc(baseTee.name)}</strong> tees (the men's rating). Everyone's course handicap for this round updates right away.</div>
+        <div style="display:flex;gap:8px">${teeField('tee-rating', 'Rating', curTee.rating, '0.1')}${teeField('tee-slope', 'Slope', curTee.slope, '1')}${teeField('tee-par', 'Par', curPar, '1')}</div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button data-action="tee-edit-save" data-session="${session.id}" class="btn btn-primary" style="flex:1">Save</button>
+          <button data-action="tee-edit-cancel" class="btn btn-secondary" style="flex:1">Cancel</button>
+        </div>
+      </div>` : '';
   const teePicker = `
     <div>
       <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:7px">Tees</div>
       <select data-action="set-tee" data-session="${session.id}" class="field-input" style="padding:11px 10px;font-weight:800">${teeOpts}</select>
-      <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7);margin-top:7px">Shown as rating/slope. Par ${course.par}. Each player's course handicap is worked out from their Handicap Index for these tees.</div>
+      <div style="font-size:12px;line-height:1.45;color:rgba(10,16,48,.7);margin-top:7px">Shown as rating/slope. Par ${curPar}. Each player's course handicap is worked out from their Handicap Index for these tees.</div>
+      ${curTee.overridden ? `<div style="font-size:12px;line-height:1.45;margin-top:6px;color:var(--accent);font-weight:800">Edited for this round: ${curTee.rating}/${curTee.slope}, par ${curPar} (built-in ${baseTee.rating}/${baseTee.slope}, par ${basePar}).</div>` : ''}
+      ${editing ? '' : `<div style="display:flex;gap:14px;margin-top:6px">
+        <button data-action="tee-edit" data-session="${session.id}" style="border:0;background:transparent;padding:6px 0;font-size:13px;font-weight:800;color:var(--accent);text-decoration:underline">Card is different? Edit rating &amp; slope</button>
+        ${curTee.overridden ? `<button data-action="tee-edit-reset" data-session="${session.id}" style="border:0;background:transparent;padding:6px 0;font-size:13px;font-weight:800;color:var(--muted);text-decoration:underline">Reset to built-in</button>` : ''}
+      </div>`}
+      ${teeEditor}
     </div>`;
 
   const countsBtns = [{ v: true, name: 'Counts' }, { v: false, name: 'Doesn’t count' }].map((o) => {

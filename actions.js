@@ -92,6 +92,8 @@ function pickCourse(sessionId, courseId) {
     const session = findSession(sessionId);
     session.courseId = courseId;
     session.teeId = COURSES_BY_ID[courseId].defaultTee;
+    delete session.teeOverride;
+    state.ui.teeEdit = null;
     // the hammer only exists at Tobacco Road: moving the round elsewhere drops it
     const g = GAMES_BY_ID[session.format];
     if (g && !gameAllowedAt(g, courseId)) session.format = gamesForCourse(courseId, g.shape)[0].id;
@@ -102,8 +104,39 @@ function pickTee(sessionId, teeId) {
   if (roundIsLocked(sessionId)) return;
   update((state) => {
     const session = findSession(sessionId);
-    if (COURSES_BY_ID[session.courseId].tees.some((t) => t.id === teeId)) session.teeId = teeId;
+    if (COURSES_BY_ID[session.courseId].tees.some((t) => t.id === teeId)) {
+      if (session.teeId !== teeId) delete session.teeOverride;   // typed-in numbers belong to one tee
+      session.teeId = teeId;
+    }
+    state.ui.teeEdit = null;
   });
+}
+
+// Scorecard says something different from the built-in rating/slope: type the
+// card's numbers in for this round. Saved with the round, so everyone gets them.
+function openTeeEdit(sessionId) {
+  if (roundIsLocked(sessionId)) return;
+  update((state) => { state.ui.teeEdit = sessionId; });
+}
+function closeTeeEdit() {
+  update((state) => { state.ui.teeEdit = null; });
+}
+function saveTeeEdit(sessionId, rating, slope, par) {
+  if (roundIsLocked(sessionId)) return;
+  if (!(rating >= 55 && rating <= 80)) { showNotice('The course rating should be between 55 and 80 (for example 70.3).'); return; }
+  if (!(Number.isInteger(slope) && slope >= 55 && slope <= 155)) { showNotice('The slope should be a whole number between 55 and 155 (for example 135).'); return; }
+  if (!(Number.isInteger(par) && par >= 60 && par <= 75)) { showNotice('Par should be a whole number between 60 and 75.'); return; }
+  update((state) => {
+    const session = findSession(sessionId);
+    const base = baseTeeFor(session), course = COURSES_BY_ID[session.courseId];
+    if (rating === base.rating && slope === base.slope && par === (base.par || course.par)) delete session.teeOverride;   // same as built-in: nothing to override
+    else session.teeOverride = { teeId: base.id, rating, slope, par: par === (base.par || course.par) ? null : par };
+    state.ui.teeEdit = null;
+  });
+}
+function resetTeeOverride(sessionId) {
+  if (roundIsLocked(sessionId)) return;
+  update((state) => { delete findSession(sessionId).teeOverride; state.ui.teeEdit = null; });
 }
 
 function pickShape(sessionId, shape) {

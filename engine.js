@@ -19,11 +19,19 @@ const BETS_PER_MATCH = 3;
 
 // ---- handicaps --------------------------------------------------------------
 
-// The tee a session is played from (falls back to the course's default).
-function teeFor(session) {
+// The built-in tee a session is played from (falls back to the course's default).
+function baseTeeFor(session) {
   const course = COURSES_BY_ID[session.courseId];
   return course.tees.find((t) => t.id === session.teeId)
     || course.tees.find((t) => t.id === course.defaultTee) || course.tees[0];
+}
+
+// The tee as played: the built-in rating/slope, unless the organizer typed in
+// the scorecard's own numbers for this round (session.teeOverride).
+function teeFor(session) {
+  const base = baseTeeFor(session), o = session.teeOverride;
+  if (!o || o.teeId !== base.id) return base;
+  return Object.assign({}, base, { rating: o.rating, slope: o.slope, par: o.par || base.par, overridden: true });
 }
 
 // World Handicap System conversion: index x slope/113 + (rating - par),

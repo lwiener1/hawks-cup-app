@@ -13,6 +13,14 @@ document.addEventListener('click', (ev) => {
     case 'open-rounds': goScreen('rounds'); break;
     case 'pick-course': pickCourse(a.session, a.course); break;
     case 'pick-shape': pickShape(a.session, a.shape); break;
+    case 'tee-edit': openTeeEdit(a.session); break;
+    case 'tee-edit-cancel': closeTeeEdit(); break;
+    case 'tee-edit-reset': resetTeeOverride(a.session); break;
+    case 'tee-edit-save': {
+      const num = (id) => Number(String(document.getElementById(id).value).trim().replace(',', '.'));
+      saveTeeEdit(a.session, num('tee-rating'), num('tee-slope'), num('tee-par'));
+      break;
+    }
     case 'pick-game': pickGame(a.session, a.game); break;
     case 'toggle-counts': toggleCounts(a.session); break;
     case 'lock-in': {
