@@ -344,6 +344,55 @@ function pickForGroup(sessionId, playerId) {
   });
 }
 
+// ---- calling a round (darkness / rain) --------------------------------------------
+// Matches that are already finished stand. Every unfinished match is stopped at
+// the last hole all of them completed, and its bets are settled as they stand
+// (see segmentState in engine.js). Needs the organizer code, since it decides points.
+
+function unfinishedMatches(session) {
+  const course = courseFor(session);
+  return session.matches.filter((m) => !m.submitted && m.calledAfter == null && !matchComplete(m, course));
+}
+
+// What calling the round would do, or why it can't be called.
+function callRoundPreview(sessionId) {
+  const session = findSession(sessionId), course = courseFor(session);
+  const ms = unfinishedMatches(session);
+  if (!ms.length) return { error: 'Every match in this round is already finished, so there is nothing to call.' };
+  const n = Math.min.apply(null, ms.map((m) => computeHoleResults(m, course.holes).length));
+  if (n === 0) return { error: 'No hole has been completed in the unfinished matches yet, so there is nothing to call. Change the round in Setup instead.' };
+  const st = getState();
+  const lines = ms.map((m) => {
+    const trial = Object.assign({}, m, { calledAfter: n });
+    const lbl = matchStateLabel(computeHoleResults(trial, course.holes), course.holes.length, sideShortLabel(st, session, m.sideA), sideShortLabel(st, session, m.sideB), maxPerHole(m.format));
+    return `${playerNames(m.sideA)} v ${playerNames(m.sideB)}: ` + lbl.segments.map((s) => `${s.label} ${String(s.text).replace(/&amp;/g, '&')}`).join(', ');
+  });
+  return { n, lines, short: n < Math.ceil(course.holes.length / 2) };
+}
+
+function callRound(sessionId) {
+  const p = callRoundPreview(sessionId);
+  if (p.error) { showNotice(p.error); return; }
+  update((state) => {
+    const session = findSession(sessionId);
+    unfinishedMatches(session).forEach((m) => { m.calledAfter = p.n; });
+    session.calledAfter = p.n;
+  });
+}
+
+function resumeRound(sessionId) {
+  const session = findSession(sessionId);
+  if (session.matches.some((m) => m.calledAfter != null && m.submitted)) {
+    showNotice('A called match has been submitted and locked. Unlock it first (match card, "Unlock to edit"), then resume the round.');
+    return;
+  }
+  update((state) => {
+    const s = findSession(sessionId);
+    s.matches.forEach((m) => { delete m.calledAfter; });
+    delete s.calledAfter;
+  });
+}
+
 function lockInSession(sessionId) {
   if (findSession(sessionId).matches.some((m) => m.submitted)) {
     showNotice('A match in this round is submitted and locked, so the pairings can\'t be re-set. Unlock it first (match card, "Unlock to edit").');

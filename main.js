@@ -13,6 +13,13 @@ document.addEventListener('click', (ev) => {
     case 'open-rounds': goScreen('rounds'); break;
     case 'pick-course': pickCourse(a.session, a.course); break;
     case 'pick-shape': pickShape(a.session, a.shape); break;
+    case 'card-half': {
+      const el = document.querySelector(`div[data-slider="${a.slider}"]`);
+      SLIDER_POS[a.slider] = Number(a.half);
+      if (el) el.scrollTo({ left: Number(a.half) * el.clientWidth, behavior: 'smooth' });
+      syncHalfTabs(a.slider, Number(a.half));
+      break;
+    }
     case 'tee-edit': openTeeEdit(a.session); break;
     case 'tee-edit-cancel': closeTeeEdit(); break;
     case 'tee-edit-reset': resetTeeOverride(a.session); break;
@@ -57,6 +64,25 @@ document.addEventListener('click', (ev) => {
       if (code === null) break;
       if (code.trim().toUpperCase() === UNLOCK_CODE) unlockMatch(a.match);
       else alert('That code is not right. The match stays locked.');
+      break;
+    }
+    case 'call-round': {
+      const p = callRoundPreview(a.session);
+      if (p.error) { showNotice(p.error); break; }
+      const rule = p.short
+        ? 'Fewer than nine holes were completed, so every unfinished match is HALVED (half a point per bet).'
+        : 'Each bet goes to whoever leads after those holes; a tie is a half point, and a bet nobody started is halved.';
+      const code = prompt(`Call this round after hole ${p.n}?\n\nUnfinished matches stop at hole ${p.n}. Finished matches stand.\n${rule}\n\nAs they stand:\n${p.lines.join('\n')}\n\nEnter the organizer code to call it:`);
+      if (code === null) break;
+      if (code.trim().toUpperCase() === UNLOCK_CODE) callRound(a.session);
+      else alert('That code is not right. The round stays as it is.');
+      break;
+    }
+    case 'resume-round': {
+      const code = prompt('Enter the organizer code to resume this round (the called matches go back to being played on):');
+      if (code === null) break;
+      if (code.trim().toUpperCase() === UNLOCK_CODE) resumeRound(a.session);
+      else alert('That code is not right. The round stays called.');
       break;
     }
     case 'pick-money-tab': pickMoneyTab(a.tab); break;
@@ -157,6 +183,24 @@ document.addEventListener('click', (ev) => {
       break;
   }
 });
+
+// Live scorecards show nine holes at a time. Swiping one updates its Front / Back
+// tabs and is remembered, so a re-render (new score, sync) doesn't flip it back.
+function syncHalfTabs(id, half) {
+  document.querySelectorAll(`[data-halftab="${id}"]`).forEach((b) => {
+    const on = Number(b.dataset.half) === half;
+    b.style.background = on ? 'var(--ink)' : 'var(--bg)';
+    b.style.color = on ? '#fff' : 'var(--ink)';
+  });
+}
+document.addEventListener('scroll', (ev) => {
+  const el = ev.target;
+  if (!el || !el.dataset || !el.dataset.slider || el.tagName === 'BUTTON') return;
+  if (Date.now() - SLIDER_RESTORED_AT < 500) return;   // our own scroll-to-start after a render
+  const half = el.scrollLeft > el.clientWidth / 2 ? 1 : 0;
+  SLIDER_POS[el.dataset.slider] = half;
+  syncHalfTabs(el.dataset.slider, half);
+}, true);
 
 // <select> pickers fire `change`, not `click`.
 document.addEventListener('change', (ev) => {

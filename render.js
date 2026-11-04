@@ -1411,12 +1411,103 @@ function renderHelp(state) {
     ${card('Good to know', ul([
       '<strong>Wrong player?</strong> Teams &rarr; <strong>Not you? Switch player</strong>.',
       '<strong>Scorecard photos:</strong> Rounds &rarr; <strong>Scorecards &amp; verify</strong> to snap the paper card and check scores.',
+      '<strong>Rain or darkness?</strong> The organizer can call an unfinished round: Live scoring &rarr; <strong>Rain or darkness</strong> &rarr; Call this round. Finished matches stand; the rest are settled as they stand.',
       '<strong>Stuck or odd screen?</strong> Close the app fully and reopen it. Questions: ask the organizer.',
     ]))}
   </div>`;
 }
 
 // ---------- Live scoring ----------
+// Which nine each live scorecard is showing, remembered across re-renders.
+// Only set once someone swipes or taps a tab, so it otherwise follows play.
+const SLIDER_POS = {};
+let SLIDER_RESTORED_AT = 0;
+function sliderHalf(id, dflt) { return SLIDER_POS[id] != null ? SLIDER_POS[id] : dflt; }
+function restoreSliders() {
+  SLIDER_RESTORED_AT = Date.now();
+  document.querySelectorAll('[data-slider][data-start]').forEach((el) => {
+    if (el.tagName === 'BUTTON') return;
+    el.scrollLeft = Number(el.dataset.start) * el.clientWidth;
+  });
+}
+
+// Who gets shots in a match, and on which holes: one row per player who
+// receives strokes, with a dot (or two) under every hole where they get one.
+function strokesBlock(session, course, match, nextHole) {
+  const ids = match.sideA.concat(match.sideB);
+  const strokes = handicapAllocation(ids, session);
+  const receivers = ids.filter((id) => strokes[id] > 0);
+  const pct = session.shape === 'singles' ? 'full handicap difference' : '90% of handicap, off the low player';
+  const head = receivers.length
+    ? receivers.map((id) => `<strong>${esc(PLAYERS_BY_ID[id].name)}</strong> gets ${strokes[id]}`).join(' &middot; ')
+    : 'No shots in this match';
+  const hole = course.holes[nextHole - 1];
+  const nextNote = hole ? (() => {
+    const who = receivers.map((id) => ({ id, s: shotsOnHole(strokes[id], hole.si) })).filter((x) => x.s > 0);
+    return `Hole ${hole.n} (SI ${hole.si}): ${who.length ? who.map((x) => `<strong>${esc(PLAYERS_BY_ID[x.id].name)}</strong> ${x.s === 2 ? 'gets 2' : 'gets a shot'}`).join(', ') : 'no shots'}`;
+  })() : '';
+  // A real-scorecard half: hole / par / SI header, then every player's gross
+  // score per hole. A small dot in a cell's corner is a shot on that hole.
+  // Birdies are circled, bogeys boxed (double rings / boxes for eagle / double+).
+  const W = 'flex:none;width:58px', T = 'flex:none;width:28px';
+  const half = (from, to, label) => {
+    const holes = course.holes.slice(from, to);
+    const grid = 'border-left:1px solid var(--rule)';
+    const hcell = (inner, h, extra) => `<div style="flex:1;min-width:0;text-align:center;${grid};${h && h.n === nextHole ? 'background:rgba(10,16,48,.12);' : ''}${extra || ''}">${inner}</div>`;
+    const tot = (inner, extra) => `<div style="${T};text-align:center;${grid};font-weight:800;${extra || ''}">${inner}</div>`;
+    const parSum = holes.reduce((a, h) => a + h.par, 0);
+    const hdr = `<div style="display:flex;align-items:center;background:var(--ink);color:#fff;font-size:11px;font-weight:800"><div style="${W};padding:4px 0 4px 6px;font-size:9px;letter-spacing:.08em">HOLE</div>${holes.map((h) => `<div style="flex:1;min-width:0;text-align:center;${h.n === nextHole ? 'background:var(--accent);' : ''}padding:4px 0">${h.n}</div>`).join('')}<div style="${T};text-align:center;font-size:9px;letter-spacing:.06em;padding:4px 0">${label === 'OUT' ? 'OUT' : 'IN'}</div></div>`;
+    const parRow = `<div style="display:flex;align-items:center;font-size:11px;border-bottom:1px solid var(--rule)"><div style="${W};padding:3px 0 3px 6px;font-size:9px;font-weight:800;letter-spacing:.08em;color:var(--muted)">PAR</div>${holes.map((h) => hcell(h.par, h, 'padding:3px 0')).join('')}${tot(parSum, 'padding:3px 0;font-size:11px')}</div>`;
+    const siRow = `<div style="display:flex;align-items:center;font-size:10px;color:var(--muted);border-bottom:1px solid var(--ink)"><div style="${W};padding:2px 0 2px 6px;font-size:9px;font-weight:800;letter-spacing:.08em">SI</div>${holes.map((h) => hcell(h.si, h, 'padding:2px 0')).join('')}${tot('', 'padding:2px 0')}</div>`;
+    const rows = ids.map((id) => {
+      const p = PLAYERS_BY_ID[id];
+      let sum = 0, played = 0;
+      const cells = holes.map((h) => {
+        const g = (match.grossScores[id] || {})[h.n];
+        const s = shotsOnHole(strokes[id], h.si);
+        const dots = s ? `<span style="position:absolute;top:1px;right:2px;color:var(--accent);font-size:${s === 2 ? 9 : 11}px;font-weight:800;line-height:1;letter-spacing:-1px">${s === 2 ? '&bull;&bull;' : '&bull;'}</span>` : '';
+        let inner = '';
+        if (g != null) {
+          sum += g; played++;
+          const d = g - h.par;
+          let mark = '';
+          if (d <= -1) mark = 'border:1.5px solid var(--ink);border-radius:50%;' + (d <= -2 ? 'box-shadow:0 0 0 2px #fff,0 0 0 3px var(--ink);' : '');
+          else if (d >= 1) mark = 'border:1.5px solid var(--ink);border-radius:2px;' + (d >= 2 ? 'box-shadow:0 0 0 2px #fff,0 0 0 3px var(--ink);' : '');
+          inner = `<span style="display:inline-block;min-width:19px;height:19px;line-height:${mark ? 16 : 19}px;box-sizing:border-box;font-size:13px;font-weight:800;${mark}">${g}</span>`;
+        }
+        return hcell(`${dots}${inner}`, h, 'position:relative;padding:4px 0;height:30px;box-sizing:border-box;display:flex;align-items:center;justify-content:center');
+      }).join('');
+      return `<div style="display:flex;align-items:stretch;border-bottom:1px solid var(--rule)">
+        <div style="${W};padding:0 2px 0 6px;display:flex;align-items:center;gap:4px;border-left:3px solid ${p.team === 'L' ? 'var(--accent)' : 'var(--team2)'};box-sizing:border-box"><div style="min-width:0"><div style="font-size:11.5px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</div>${strokes[id] ? `<div style="font-size:9px;color:var(--accent);font-weight:800;line-height:1">+${strokes[id]}</div>` : ''}</div></div>
+        ${cells}${tot(played ? sum : '', 'display:flex;align-items:center;justify-content:center;font-size:13px')}
+      </div>`;
+    }).join('');
+    return `<div style="border:1px solid var(--ink);margin-bottom:8px;background:#fff">${hdr}${parRow}${siRow}${rows}</div>`;
+  };
+  const nine = course.holes.length === 18 ? [[0, 9, 'OUT'], [9, 18, 'IN']] : [[0, course.holes.length, 'OUT']];
+  return `
+    <div style="margin-top:10px;border-top:1px solid var(--rule);padding-top:8px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:4px">
+        <div style="font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)">Scorecard &amp; shots</div>
+        <div style="font-size:10px;color:var(--muted);text-align:right">${esc(pct)}</div>
+      </div>
+      <div style="font-size:13px;line-height:1.4;margin-bottom:${receivers.length ? 4 : 8}px">${head}</div>
+      ${nextNote && receivers.length ? `<div style="font-size:13px;line-height:1.4;margin-bottom:8px;color:var(--accent)">${nextNote}</div>` : ''}
+      ${nine.length === 1 ? half(...nine[0]) : (() => {
+        // nine holes at a time: swipe (or tap the tabs) for the other nine. It opens
+        // on the nine the next hole is in, and remembers where you left it.
+        const cur = sliderHalf(match.id, nextHole > 9 ? 1 : 0);
+        const tab = (i, text) => `<button data-action="card-half" data-slider="${match.id}" data-half="${i}" data-halftab="${match.id}" style="flex:1;border:0;padding:7px 0;font-size:12px;font-weight:800;background:${cur === i ? 'var(--ink)' : 'var(--bg)'};color:${cur === i ? '#fff' : 'var(--ink)'}">${text}</button>`;
+        return `
+        <div style="display:flex;gap:1px;background:var(--rule);border:1px solid var(--rule);margin-bottom:6px">${tab(0, 'Front 9')}${tab(1, 'Back 9')}</div>
+        <div data-slider="${match.id}" data-start="${cur}" style="display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;margin:0 -10px">
+          ${nine.map(([a, b, l]) => `<div style="flex:0 0 100%;box-sizing:border-box;padding:0 10px;scroll-snap-align:start">${half(a, b, l)}</div>`).join('')}
+        </div>`;
+      })()}
+      <div style="font-size:10px;color:var(--muted);line-height:1.4">Swipe for the other nine. Dot = a shot on that hole (two dots = two shots). <span style="border:1.5px solid var(--ink);border-radius:50%;padding:0 3px">&nbsp;</span> under par, <span style="border:1.5px solid var(--ink);border-radius:2px;padding:0 3px">&nbsp;</span> over par. The scores are gross; shots come off for net.</div>
+    </div>`;
+}
+
 // One place to see every match in play and jump straight into scoring.
 function liveMatchBlock(state, e, mine) {
   const { session, course, match, results } = e;
@@ -1437,6 +1528,7 @@ function liveMatchBlock(state, e, mine) {
     </div>
     ${started ? holeStrip(results, n) : ''}
     ${started ? nassauChips(lbl.segments) : ''}
+    ${strokesBlock(session, course, match, next)}
     <button data-action="open-card" data-match="${match.id}" class="btn btn-primary btn-block" style="margin-top:10px">${started ? `Score hole ${next}` : 'Start scoring'}</button>
   </div>`;
 }
@@ -1465,9 +1557,26 @@ function renderLive(state) {
     ${section('Finished &middot; needs submitting')}
     ${waiting.map(({ match }) => `
     <button data-action="open-card" data-match="${match.id}" style="display:flex;width:100%;justify-content:space-between;align-items:center;gap:10px;text-align:left;border:0;border-top:1px solid var(--rule);background:transparent;padding:12px 18px">
-      <span style="font-size:14px;font-weight:800">${esc(playerNames(match.sideA))} v ${esc(playerNames(match.sideB))}</span>
+      <span style="font-size:14px;font-weight:800">${esc(playerNames(match.sideA))} v ${esc(playerNames(match.sideB))}${match.calledAfter != null ? `<span style="display:block;font-size:11px;font-weight:600;color:var(--muted)">Called after hole ${match.calledAfter}</span>` : ''}</span>
       <span style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);white-space:nowrap">Submit &rarr;</span>
     </button>`).join('')}` : '';
+
+  // Rain or darkness: the organizer can call a round that can't be finished.
+  const callRows = state.sessions.filter((s) => s.locked && s.matches.length).map((s) => {
+    const course = courseFor(s);
+    const calledAt = s.calledAfter != null ? s.calledAfter : null;
+    const open = unfinishedMatches(s).filter((m) => computeHoleResults(m, course.holes).length > 0);
+    if (calledAt == null && !open.length) return '';
+    const btn = (action, text, strong) => `<button data-action="${action}" data-session="${s.id}" class="btn ${strong ? 'btn-primary' : 'btn-secondary'}" style="margin-top:8px;width:100%">${text}</button>`;
+    return `
+    <div style="margin:0 20px 10px;border:1px solid var(--rule);border-radius:16px;padding:12px 16px">
+      <div style="font-size:14px;font-weight:800">${esc(course.name)} &middot; ${esc(s.day)}</div>
+      ${calledAt != null
+        ? `<div style="font-size:13px;line-height:1.45;color:var(--muted);margin-top:2px">Called after hole ${calledAt}. Unfinished matches are settled as they stood.</div>${btn('resume-round', 'Resume this round', false)}`
+        : `<div style="font-size:13px;line-height:1.45;color:var(--muted);margin-top:2px">${open.length} match${open.length === 1 ? '' : 'es'} still in play.</div>${btn('call-round', 'Call this round&hellip;', false)}`}
+    </div>`;
+  }).join('');
+  const callBlock = callRows ? `${section('Rain or darkness')}<div style="padding:0 20px 8px;font-size:12px;line-height:1.45;color:var(--muted)">If a round can't be finished, the organizer can call it. Needs the organizer code.</div>${callRows}` : '';
 
   const latest = state.feed.filter((f) => f.isSystem).slice(0, 4);
   const latestBlock = latest.length ? `
@@ -1484,6 +1593,7 @@ function renderLive(state) {
     ${othersBlock}
     ${startBlock}
     ${submitBlockLive}
+    ${callBlock}
     ${latestBlock}
     <div style="height:26px"></div>
   </div>`;
@@ -1611,6 +1721,7 @@ function render() {
   lastRenderedScreen = ui.screen;
   const newPhoto = document.querySelector('.photo-scroll');
   if (newPhoto && photoPos) { newPhoto.scrollTop = photoPos[0]; newPhoto.scrollLeft = photoPos[1]; }
+  restoreSliders();
 
   if (typeof checkCelebrations === 'function') checkCelebrations(state);
 

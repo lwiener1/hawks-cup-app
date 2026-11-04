@@ -155,10 +155,17 @@ function holeBreakdown(match, hole, gross) {
 
 // Result (see above) for every hole already played: all players have a
 // committed gross for the hole. Stops at the first hole not yet entered.
+// A match the organizer called (darkness / rain) only counts its first
+// `calledAfter` holes; the returned array is marked `.called` so the Nassau
+// bets below are settled as they stand.
 function computeHoleResults(match, holes) {
   const ids = match.sideA.concat(match.sideB);
   const results = [];
+  const called = match.calledAfter != null;
+  const cap = called ? match.calledAfter : holes.length;
+  if (called) results.called = match.calledAfter;
   for (const hole of holes) {
+    if (results.length >= cap) break;
     if (!ids.every((id) => match.grossScores[id] && match.grossScores[id][hole.n] != null)) break;
     const gross = {};
     ids.forEach((id) => { gross[id] = match.grossScores[id][hole.n]; });
@@ -189,6 +196,13 @@ function segmentState(results, seg, maxPer) {
   const slice = results.slice(seg.from, seg.to);
   const len = seg.to - seg.from;
   const played = slice.length;
+  if (results.called != null) {
+    // Round called: every bet is settled as it stands. A bet nobody has started
+    // is halved, and if fewer than a nine was played the whole match is halved.
+    const nine = seg.key === 'front' ? seg.to : seg.key === 'back' ? seg.from : Math.ceil(seg.to / 2);
+    const diff = results.called < nine ? 0 : matchDiff(slice);
+    return { diff, played, len, remaining: len - played, final: true, started: true, called: true };
+  }
   const diff = matchDiff(slice);
   const remaining = len - played;
   const final = played > 0 && (remaining === 0 || Math.abs(diff) > remaining * maxPer);
@@ -211,7 +225,7 @@ function segmentText(st, nickA, nickB) {
   if (st.diff === 0) return st.final ? 'Halved' : 'All square';
   const leader = st.diff > 0 ? nickA : nickB;
   const m = Math.abs(st.diff);
-  return st.final && st.remaining > 0 ? `${leader} ${m}&${st.remaining}` : `${leader} ${m} UP`;
+  return st.final && st.remaining > 0 && !st.called ? `${leader} ${m}&${st.remaining}` : `${leader} ${m} UP`;
 }
 
 // Full Nassau picture for a match.
