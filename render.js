@@ -199,8 +199,8 @@ function renderCup(state) {
     <div style="margin:18px 20px 0;border:3px solid var(--accent);border-radius:18px;padding:16px 16px 18px;background:var(--bg)">
       <div style="font-size:13px;font-weight:800;color:var(--accent)">Your match &middot; ${esc(course.name)}</div>
       <div style="font-size:22px;font-weight:800;letter-spacing:-.01em;line-height:1.2;margin-top:4px">${esc(playerNames(match.sideA))} <span style="color:var(--muted);font-weight:600">vs</span> ${esc(playerNames(match.sideB))}</div>
-      <div style="font-size:30px;font-weight:800;letter-spacing:-.02em;margin-top:8px;color:${results.length ? lbl.color : 'var(--muted)'}">${esc(results.length ? lbl.text : 'Not started')}</div>
-      <div style="font-size:15px;color:var(--muted);font-weight:600">${results.length ? `Through ${results.length} hole${results.length === 1 ? '' : 's'}` : 'Ready to tee off'}</div>
+      <div style="font-size:30px;font-weight:800;letter-spacing:-.02em;margin-top:8px;color:${results.length || lbl.done ? lbl.color : 'var(--muted)'}">${esc(results.length || lbl.done ? lbl.text : 'Not started')}</div>
+      <div style="font-size:15px;color:var(--muted);font-weight:600">${results.manual ? 'Result entered by hand' : results.length ? `Through ${results.length} hole${results.length === 1 ? '' : 's'}` : 'Ready to tee off'}</div>
       <button data-action="open-card" data-match="${match.id}" class="btn btn-primary btn-block" style="margin-top:14px;padding:16px;font-size:18px">${done ? 'Submit final score' : results.length ? `Score hole ${next}` : 'Start scoring'}</button>
     </div>`;
   }
@@ -841,7 +841,7 @@ function renderCard(state) {
       </div>
       <div style="text-align:right">
         <div style="font-size:19px;font-weight:800;color:${headerLabel.color};line-height:1">${esc(headerLabel.text)}</div>
-        <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">thru ${committedResults.length}</div>
+        <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">${committedResults.manual ? 'result by hand' : `thru ${committedResults.length}`}</div>
       </div>
     </div>
     <div style="padding:0 18px 12px;border-bottom:2px solid var(--rule);margin-top:-1px">
