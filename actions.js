@@ -246,7 +246,8 @@ function openFoursome(matchId) {
     const ms = foursomeMatches(session, gi), course = courseFor(session);
     state.ui.cardFrom = state.ui.screen === 'live' ? 'live' : 'rounds';
     state.ui.foursome = { sessionId: session.id, gi };
-    const idx = cardView(state, ms[0], course).holeIdx;       // both matches score the same hole together
+    const lead = ms.find((x) => !x.manualResult) || ms[0];
+    const idx = cardView(state, lead, course).holeIdx;        // both matches score the same hole together
     ms.forEach((x) => { if (cardView(state, x, course).holeIdx !== idx) setViewedHole(state, x.id, idx); });
     state.ui.screen = 'foursome';
   });
@@ -265,7 +266,8 @@ function foursomeStep(delta) {
   const f = getState().ui.foursome, session = f && findSession(f.sessionId);
   if (!session) return;
   const ms = foursomeMatches(session, f.gi);
-  foursomeGoto(cardView(getState(), ms[0], courseFor(session)).holeIdx + delta);
+  const lead = ms.find((m) => !m.manualResult) || ms[0];
+  foursomeGoto(cardView(getState(), lead, courseFor(session)).holeIdx + delta);
 }
 
 // Post the hole for both matches. If the first one runs into a score conflict
@@ -281,7 +283,7 @@ function postNext(ids) {
 }
 function postFoursomeHole() {
   const f = getState().ui.foursome, session = f && findSession(f.sessionId);
-  if (session) postNext(foursomeMatches(session, f.gi).map((m) => m.id));
+  if (session) postNext(foursomeMatches(session, f.gi).filter((m) => !m.manualResult).map((m) => m.id));
 }
 function submitFoursome() {
   const f = getState().ui.foursome, session = f && findSession(f.sessionId);

@@ -828,9 +828,12 @@ function renderCard(state) {
       <button data-action="submit-match" data-match="${match.id}" class="btn btn-primary btn-block" style="margin-top:10px">Submit final score</button>
     </div>` : '';
 
+  const manualNote = match.manualResult ? `
+    <div style="padding:10px 18px;background:var(--row-alt);border-bottom:2px solid var(--rule);font-size:12px;line-height:1.45"><strong style="letter-spacing:.08em;text-transform:uppercase">Result entered by hand</strong><br>${esc(match.manualNote || 'The hole-by-hole scores were not recorded for this match; only its result was.')}</div>` : '';
   return `
   <div>
     ${lockBanner}
+    ${manualNote}
     <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:13px 18px;border-bottom:2px solid var(--rule)">
       <div>
         <div style="font-size:13px;font-weight:800">${esc(shortA)}</div>
@@ -879,7 +882,8 @@ function renderFoursome(state) {
   const course = courseFor(session);
   const group = sessionGroups(session)[f.gi];
   const views = ms.map((m) => cardView(state, m, course));
-  const hole = views[0].hole, holeIdx = views[0].holeIdx;
+  const lead = views.find((v, i) => !ms[i].manualResult) || views[0];   // a hand-entered match has no holes to follow
+  const hole = lead.hole, holeIdx = lead.holeIdx;
   const tee = teeFor(session);
   const yds = tee.yards ? tee.yards[hole.n - 1] : null;
   const nHoles = course.holes.length;
@@ -894,13 +898,27 @@ function renderFoursome(state) {
       <button data-action="fs-step" data-delta="1" style="border:1px solid var(--rule);background:transparent;border-radius:50%;width:40px;height:40px;font-size:18px">&rarr;</button>
     </div>
     <div style="display:flex;gap:2px;padding:0 20px 10px">${course.holes.map((h, i) => {
-      const posted = ms.every((m) => (m.grossScores[m.sideA[0]] || {})[h.n] != null);
+      const posted = ms.every((m) => m.manualResult || (m.grossScores[m.sideA[0]] || {})[h.n] != null);
       return `<button data-action="fs-goto" data-idx="${i}" style="flex:1;border:0;padding:0;background:transparent"><div style="height:14px;border-radius:2px;background:${posted ? 'var(--accent)' : 'var(--rule-soft)'};outline:${i === holeIdx ? '2px solid var(--accent)' : 'none'};outline-offset:1px"></div></button>`;
     }).join('')}</div>`;
 
   // each singles match: two players, steppers, the hole result as entered
   const matchBlocks = ms.map((m, mi) => {
     const view = views[mi];
+    if (m.manualResult) {
+      // only the outcome is known: nothing to score
+      const a = PLAYERS_BY_ID[m.sideA[0]].name, b = PLAYERS_BY_ID[m.sideB[0]].name;
+      const label = matchStateLabel(view.results, nHoles, a, b, 1);
+      return `
+    <div style="margin:0 20px 12px;border:1px solid var(--rule);border-radius:16px;padding:12px 14px;background:var(--row-alt)">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+        <div style="font-size:13px;font-weight:700;color:var(--muted)">Match ${mi + 1} &middot; ${esc(a)} v ${esc(b)}</div>
+        ${m.submitted ? `<div style="font-size:12px;font-weight:800;color:var(--muted)">&check; Submitted</div>` : ''}
+      </div>
+      <div style="font-size:16px;font-weight:800;margin-top:4px">${esc(label.text)}</div>
+      <div style="font-size:12px;line-height:1.45;color:var(--muted);margin-top:4px">${esc(m.manualNote || 'Result entered by hand; hole-by-hole scores were not recorded.')}</div>
+    </div>`;
+    }
     const ids = m.sideA.concat(m.sideB);
     const strokes = handicapAllocation(ids, session);
     const nets = {};

@@ -161,6 +161,9 @@ function holeBreakdown(match, hole, gross) {
 function computeHoleResults(match, holes) {
   const ids = match.sideA.concat(match.sideB);
   const results = [];
+  // A match whose scores weren't recorded (only its outcome is known) carries
+  // the result of each bet instead: { front, back, total } = 'a' | 'b' | 'h'.
+  if (match.manualResult) { results.manual = match.manualResult; return results; }
   const called = match.calledAfter != null;
   const cap = called ? match.calledAfter : holes.length;
   if (called) results.called = match.calledAfter;
@@ -196,6 +199,10 @@ function segmentState(results, seg, maxPer) {
   const slice = results.slice(seg.from, seg.to);
   const len = seg.to - seg.from;
   const played = slice.length;
+  if (results.manual) {
+    const w = results.manual[seg.key];
+    return { diff: w === 'a' ? 1 : w === 'b' ? -1 : 0, played: len, len, remaining: 0, final: true, started: true, manual: true };
+  }
   if (results.called != null) {
     // Round called: every bet is settled as it stands. A bet nobody has started
     // is halved, and if fewer than a nine was played the whole match is halved.
@@ -225,6 +232,7 @@ function segmentText(st, nickA, nickB) {
   if (st.diff === 0) return st.final ? 'Halved' : 'All square';
   const leader = st.diff > 0 ? nickA : nickB;
   const m = Math.abs(st.diff);
+  if (st.manual) return `${leader} won`;
   return st.final && st.remaining > 0 && !st.called ? `${leader} ${m}&${st.remaining}` : `${leader} ${m} UP`;
 }
 
